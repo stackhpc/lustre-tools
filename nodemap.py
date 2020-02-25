@@ -2,14 +2,13 @@
 """ Export lustre nodemap information as yaml
 
     Usage:
-        nodemap.py
-    
-    WARNING: This does not handle nested lists/dicts at the moment, only name.subname.[...].parameter=value lines
+        nodemap.py export
+        nodemap.py diff yaml
 """
 from __future__ import print_function
 __version__ = "0.0"
 
-import subprocess, pprint, sys, re, ast
+import subprocess, pprint, sys, re, ast, difflib
 
 # pyyaml:
 from yaml import load, dump
@@ -73,6 +72,7 @@ def get_nodemap_info():
     #print(nodemaps)
     for nmap in nodemaps:
         lctl_get_param("nodemap.{nmap}.*".format(nmap=nmap), output)
+    to_int(output)
 
     return output
 
@@ -94,18 +94,28 @@ def to_int(data, key_or_idx=None):
     elif isinstance(value, str):
         if value.isdigit():
             data[key_or_idx] = int(value)
-            print('changed', value)
         return
-    #raise TypeError('should never get here:', value)
 
 def main():
-    output = get_nodemap_info()
-    
-    to_int(output)
-    yaml_out = dump(output, Dumper=Dumper)
-    print('----- OUTPUT ----')
-    print(yaml_out)
-    #pprint.pprint(output)
+    if len(sys.argv) == 2:
+        if sys.argv[1] == 'export':
+            output = get_nodemap_info()
+            yaml_out = dump(output, Dumper=Dumper)
+            print(yaml_out)
+    if len(sys.argv) == 3:
+        if sys.argv[1] == 'diff':
+            with open(sys.argv[-1]) as f:
+                # load it so we know its valid yaml and sorted:
+                data = load(f.read(), Loader=Loader)
+                left = dump(data).split('\n')
+            right = get_nodemap_info()
+            right = dump(right).split('\n')
+            for diff in difflib.context_diff(left, right):
+                print(diff)
 
+    else:
+        print('ERROR: invalid commandline, help follows:')
+        print(__doc__)
+    
 if __name__ == '__main__':
     main()
