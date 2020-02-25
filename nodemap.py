@@ -3,7 +3,7 @@
 
     Usage:
         nodemap.py export
-        nodemap.py diff from_yaml
+        nodemap.py diff FILE
 """
 from __future__ import print_function
 __version__ = "0.0"
@@ -97,29 +97,27 @@ def to_int(data, key_or_idx=None):
         return
 
 def main():
-    if len(sys.argv) == 2:
-        if sys.argv[1] == 'export':
-            output = get_nodemap_info()
-            yaml_out = dump(output, Dumper=Dumper)
-            print(yaml_out)
-    if len(sys.argv) == 3:
-        if sys.argv[1] == 'diff':
+
+    # get system info:
+    data = get_nodemap_info()
+    live_time = datetime.datetime.now().isoformat()
+    live_yaml = dump(data, Dumper=Dumper)
+
+    if len(sys.argv) == 2 and sys.argv[1] == 'export':
+        print(live_yaml)
+    elif len(sys.argv) == 3 and sys.argv[1] == 'diff':
             
-            # use file as "from":
-            from_path = sys.argv[-1]
-            from_time = datetime.datetime.fromtimestamp(os.path.getmtime(from_path)).isoformat()
-            with open(from_path) as f:
-                # load it so we know its valid yaml and sorted:
-                from_data = load(f.read(), Loader=Loader)
-                from_yaml = dump(from_data).split('\n')
-            
-            # use system config as "right":
-            to_time = datetime.datetime.now().isoformat()
-            to_data = get_nodemap_info()
-            to_yaml = dump(to_data).split('\n')
-            
-            for diff in difflib.context_diff(from_yaml, to_yaml, from_path, 'live', from_time, to_time):
-                print(diff)
+        # use file as "from":
+        saved_path = sys.argv[-1]
+        saved_time = datetime.datetime.fromtimestamp(os.path.getmtime(saved_path)).isoformat()
+        with open(saved_path) as f:
+            # load it so we know its valid yaml and sorted:
+            saved_data = load(f.read(), Loader=Loader)
+            saved_yaml = dump(saved_data)
+        
+        # diff:
+        for diff in difflib.unified_diff(saved_yaml.split('\n'), live_yaml.split('\n'), saved_path, 'live', saved_time, live_time):
+            print(diff)
 
     else:
         print('ERROR: invalid commandline, help follows:')
