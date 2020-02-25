@@ -1,16 +1,15 @@
 #!/usr/bin/env python
-""" Export lustre network information as yaml in the same format can be imported as lnet.conf
-    i.e this is basically the same as the "net" and "route" sections of `lnetctl export`
-    Note `lnetctl show` does not show routing info.
+""" Export life lustre network information as yaml in a minimal format suitable for `lnetctl import`.
+    
+    This essentially strips unneeded/transient info such as stats etc from `lnetctl export` output.
+    Note the format the lustre manual describes for the `import` command is NOT actually the same as
+    is produced by the `otuput` command, although tests show the `import` command will accept either.
+    The format used here matches the exported format, as that contains more info (such as NIDs) which
+    while not *required* for lnet operation will allow unexpected configuration changes to be identified.
 
-    Note the format for "import" described in the lustre manual is NOT the same as the exported format,
-    although the manual says the exported format is suitable for import! This leaves us guessing a bit ...
-    this uses the exported format, as that contains more info, which is probably unnecessary (e.g. NIDs) but gives us
-    a better chance of catching misconfigurations.
+    There is also the `lnetctl show` command, but this does not export route information.
 
-    TODO:
-
-    NB: needs sudo rights!
+    NB: Needs sudo rights!
 """
 
 from __future__ import print_function
@@ -25,25 +24,23 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 
-# define a singleton like None
-class All():
-    pass
-
-ROUTES_FIELDS = ('gateway', 'hop', 'net')         # NB hop can actually be ommited => -1 but again better to define?
-LOCAL_NI_FIELDS = ('interfaces', 'nid', 'status') # NB status isn't really a requied field but would be useful for diff? How do we set down?
-
-
+# define fields we want:
+ROUTES_FIELDS = ('gateway', 'hop', 'net')         # hop not  required (=> -1) but useful for diff?
+LOCAL_NI_FIELDS = ('interfaces', 'nid', 'status') # status not required but diff? How do we set "down"?
 
 def cmd(args):
-    proc = subprocess.Popen(args, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) # need shell else lctl not found
+    proc = subprocess.Popen(args, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) # need shell else lnetctl not found
     stdout, stderr = proc.communicate()
     return stdout, stderr
 
 def main():
+
+    # read the system's state as yaml:
     sout, serr = cmd('sudo lnetctl export')
     if serr is not None:
         raise Exception(serr)
-
+    
+    # convert to a python datastructure:
     data = load(sout, Loader=Loader)
 
     # filter:
@@ -56,10 +53,14 @@ def main():
                       'local NI(s)':[],}
             for local_ni in net['local NI(s)']:
                 outnet['local NI(s)'].append(dict((k, v) for (k, v) in local_ni.iteritems() if k in LOCAL_NI_FIELDS))
-
-            
             output['net'].append(outnet)
-    pprint.pprint(output)
+    
+    
+    # output:
+    #pprint.pprint(output)
+    outs = dump(output, Dumper=Dumper)
+    print(outs)
+    
 
 
 if __name__ == '__main__':
