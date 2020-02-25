@@ -124,6 +124,7 @@ def main():
     else:
         print('ERROR: invalid commandline, help follows:')
         print(__doc__)
+        exit(1)
     
 if __name__ == '__main__':
     main()
