@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-""" Export life lustre network information as yaml in a minimal format suitable for `lnetctl import`.
+""" Export live lustre network information as yaml in a minimal format suitable for `lnetctl import`.
+
+    Usage:
+        lnet.py export
     
     This essentially strips unneeded/transient info such as stats etc from `lnetctl export` output.
     Note the format the lustre manual describes for the `import` command is NOT actually the same as
@@ -34,6 +37,12 @@ def cmd(args):
     return stdout, stderr
 
 def main():
+
+    if len(sys.argv) != 2 or sys.argv[-1] != 'export':
+        print('ERROR: invalid commandline, help follows:')
+        print(__doc__)
+        exit(1)
+    
 
     # read the system's state as yaml:
     sout, serr = cmd('sudo lnetctl export')
