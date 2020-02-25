@@ -47,8 +47,10 @@ def lctl_get_param(item, output):
                     except:
                         print('ERROR: failed when parsing', quoted_prev_value)
                         raise
-                    accumulate = []
+                    
+                    # store and reset:
                     r[param] = py_prev_value
+                    accumulate = []
 
                 # handle normal lines:
                 parts = line.split('.')
@@ -57,7 +59,6 @@ def lctl_get_param(item, output):
                 for p in parts[:-1]:
                     r = r.setdefault(p, {})
                 r[param] = value
-
 
             else:
                 accumulate.append(line)
@@ -74,9 +75,33 @@ def get_nodemap_info():
         lctl_get_param("nodemap.{nmap}.*".format(nmap=nmap), output)
 
     return output
+
+def to_int(data, key_or_idx=None):
+    """ Change ints-as-strs in nested python lists/dicts to ints
     
+        NB: modifies data in place and returns None
+    """
+    if key_or_idx is None:
+        value = data
+    else:
+        value = data[key_or_idx]
+    if isinstance(value, list):
+        for idx, v in enumerate(value):
+            to_int(value, idx)
+    elif isinstance(value, dict):
+        for k, v in value.iteritems():
+            to_int(value, k)
+    elif isinstance(value, str):
+        if value.isdigit():
+            data[key_or_idx] = int(value)
+            print('changed', value)
+        return
+    #raise TypeError('should never get here:', value)
+
 def main():
     output = get_nodemap_info()
+    
+    to_int(output)
     yaml_out = dump(output, Dumper=Dumper)
     print('----- OUTPUT ----')
     print(yaml_out)
