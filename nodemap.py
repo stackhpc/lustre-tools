@@ -3,12 +3,12 @@
 
     Usage:
         nodemap.py export
-        nodemap.py diff yaml
+        nodemap.py diff from_yaml
 """
 from __future__ import print_function
 __version__ = "0.0"
 
-import subprocess, pprint, sys, re, ast, difflib
+import subprocess, pprint, sys, re, ast, difflib, datetime, os
 
 # pyyaml:
 from yaml import load, dump
@@ -104,13 +104,21 @@ def main():
             print(yaml_out)
     if len(sys.argv) == 3:
         if sys.argv[1] == 'diff':
-            with open(sys.argv[-1]) as f:
+            
+            # use file as "from":
+            from_path = sys.argv[-1]
+            from_time = datetime.datetime.fromtimestamp(os.path.getmtime(from_path)).isoformat()
+            with open(from_path) as f:
                 # load it so we know its valid yaml and sorted:
-                data = load(f.read(), Loader=Loader)
-                left = dump(data).split('\n')
-            right = get_nodemap_info()
-            right = dump(right).split('\n')
-            for diff in difflib.context_diff(left, right):
+                from_data = load(f.read(), Loader=Loader)
+                from_yaml = dump(from_data).split('\n')
+            
+            # use system config as "right":
+            to_time = datetime.datetime.now().isoformat()
+            to_data = get_nodemap_info()
+            to_yaml = dump(to_data).split('\n')
+            
+            for diff in difflib.context_diff(from_yaml, to_yaml, from_path, 'live', from_time, to_time):
                 print(diff)
 
     else:
