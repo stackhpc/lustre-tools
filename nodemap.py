@@ -17,6 +17,10 @@ def cmd(args):
     return stdout, stderr
 
 def lctl_get_param(item, output):
+    """ TODO:
+        NB output gets modified!
+        format: nested dicts, values may be nested list/dicts (including empty ones) or strings.
+    """
     s, e = cmd("sudo lctl get_param '{item}'".format(item=item)) # need quoting around `item` to avoid shell expansion of ".*" !
     lines = s.strip().split('\n')
     accumulate = []
@@ -52,7 +56,8 @@ def lctl_get_param(item, output):
                 accumulate.append(line)
     return output
     
-def main():
+def get_nodemap_info():
+    """ TODO: """
     output = {}
     lctl_get_param("nodemap.*", output)
     s, e = cmd("lctl nodemap_info",) # need quoting to avoid shell expansion!
@@ -61,8 +66,12 @@ def main():
     for nmap in nodemaps:
         lctl_get_param("nodemap.{nmap}.*".format(nmap=nmap), output)
 
+    return output
+    
+def main():
+    output = get_nodemap_info()
     print('----- OUTPUT ----')
     pprint.pprint(output)
-    
+
 if __name__ == '__main__':
     main()
