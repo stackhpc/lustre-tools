@@ -11,6 +11,13 @@ __version__ = "0.0"
 
 import subprocess, pprint, sys, re, ast
 
+# pyyaml:
+from yaml import load, dump
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ImportError:
+    from yaml import Loader, Dumper
+
 def cmd(args):
     proc = subprocess.Popen(args, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) # need shell else lctl not found
     stdout, stderr = proc.communicate()
@@ -70,8 +77,10 @@ def get_nodemap_info():
     
 def main():
     output = get_nodemap_info()
+    yaml_out = dump(output, Dumper=Dumper)
     print('----- OUTPUT ----')
-    pprint.pprint(output)
+    print(yaml_out)
+    #pprint.pprint(output)
 
 if __name__ == '__main__':
     main()
