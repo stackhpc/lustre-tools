@@ -1,19 +1,27 @@
 #!/usr/bin/env python
-""" Export live lustre network information as yaml in a minimal format suitable for `lnetctl import`.
+""" Export or compare lustre network and route information. Note sudo rights are required.
 
     Usage:
-        lnet.py export
+        lnet.py export [FILE]
+
+            Export lnet configuration from the live system or from the specified yaml file.
+
         lnet.py diff FILE
     
-    This essentially strips unneeded/transient info such as stats etc from `lnetctl export` output.
-    Note the format the lustre manual describes for the `import` command is NOT actually the same as
-    is produced by the `otuput` command, although tests show the `import` command will accept either.
-    The format used here matches the exported format, as that contains more info (such as NIDs) which
-    while not *required* for lnet operation will allow unexpected configuration changes to be identified.
+            Diff the lnet configuration of the live system against that in the specified yaml file.
 
-    There is also the `lnetctl show` command, but this does not export route information.
+    The data output is lnet and route information, similar to that from `lnetctl export` {1} but without
+    transient info such as stats. Output is yaml format, suitable for `lnetctl import` {2}. 
+    Lists and dicts in the output are sorted so that the ordering is repeatable but this means output
+    from exporting a file may not match the original file.
 
-    NB: Needs sudo rights!
+    Notes
+    1. The `lnetctl show` command does not provide route information.
+    2. The `lnetctl export` command produces a different format from that documented for `lnetctl import`
+       although tests that command will accept either format. This command uses the `lnetctl export` format
+       as that contains more info (such as NIDs) which  while not *required* for lnet operation should allow
+       unexpected configuration changes to be identified.
+
 """
 
 from __future__ import print_function
@@ -37,6 +45,17 @@ def cmd(args):
     stdout, stderr = proc.communicate()
     return stdout, stderr
 
+def deep_sort(data):
+    """ In-place sort of any lists in a nested dict/list datastructure """
+    if isinstance(data, list):
+        data.sort()
+        for item in data:
+            deep_sort(item)
+    elif isinstance(data, dict):
+        for item in data.itervalues():
+            deep_sort(item)
+    return None
+
 def get_lnet_info():
     """ TODO """
     # read the system's state as yaml:
@@ -59,6 +78,9 @@ def get_lnet_info():
                 outnet['local NI(s)'].append(dict((k, v) for (k, v) in local_ni.iteritems() if k in LOCAL_NI_FIELDS))
             output['net'].append(outnet)
     
+    # sort:
+    deep_sort(data)
+    
     return output
 
 def main():
@@ -66,12 +88,12 @@ def main():
     # get system info:
     live_data = get_lnet_info()
     live_time = datetime.datetime.now().isoformat()
-    live_yaml = dump(live_data, Dumper=Dumper)        
+    live_yaml = dump(live_data, Dumper=Dumper, default_flow_style=False)        
 
     if len(sys.argv) == 2 and sys.argv[1] == 'export':
         print(live_yaml)
     
-    elif len(sys.argv) == 3 and sys.argv[1] == 'diff':
+    elif len(sys.argv) == 3:
         
         # use file as "from":
         saved_path = sys.argv[-1]
@@ -79,11 +101,15 @@ def main():
         with open(saved_path) as f:
             # load it so we know its valid yaml and sorted:
             saved_data = load(f.read(), Loader=Loader)
-            saved_yaml = dump(saved_data)
+            deep_sort(saved_data)
+            saved_yaml = dump(saved_data, default_flow_style=False)
         
-        # diff:
-        for diff in difflib.unified_diff(saved_yaml.split('\n'), live_yaml.split('\n'), saved_path, 'live', saved_time, live_time):
-            print(diff)
+        if sys.argv[1] == 'export':
+            print(saved_yaml)
+        elif sys.argv[1] == 'diff':
+            
+            for diff in difflib.unified_diff(saved_yaml.split('\n'), live_yaml.split('\n'), saved_path, 'live', saved_time, live_time):
+                print(diff)
         
     else:
         print('ERROR: invalid commandline, help follows:')
