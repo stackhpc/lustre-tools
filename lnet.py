@@ -46,7 +46,10 @@ def cmd(args):
     return stdout, stderr
 
 def deep_sort(data):
-    """ In-place sort of any lists in a nested dict/list datastructure """
+    """ In-place sort of any lists in a nested dict/list datastructure.
+    
+        NB pyyaml sorts dicts when dump()ing so only need to handle lists here.
+    """
     if isinstance(data, list):
         data.sort()
         for item in data:
@@ -88,7 +91,7 @@ def main():
     # get system info:
     live_data = get_lnet_info()
     live_time = datetime.datetime.now().isoformat()
-    live_yaml = dump(live_data, Dumper=Dumper, default_flow_style=False)        
+    live_yaml = dump(live_data, Dumper=Dumper, default_flow_style=False)
 
     if len(sys.argv) == 2 and sys.argv[1] == 'export':
         print(live_yaml)
