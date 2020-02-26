@@ -4,6 +4,10 @@
     Usage:
         nodemap.py export
         nodemap.py diff FILE
+    
+    In the yaml output:
+    - Simple values (i.e. which aren't themselves mappings or lists) are either ints or strings.
+    - Lists and dicts are sorted to ensure predictable output.
 """
 from __future__ import print_function
 __version__ = "0.0"
@@ -16,6 +20,20 @@ try:
     from yaml import CLoader as Loader, CDumper as Dumper
 except ImportError:
     from yaml import Loader, Dumper
+
+def deep_sort(data):
+    """ In-place sort of any lists in a nested dict/list datastructure.
+    
+        NB pyyaml sorts dicts when dump()ing so only need to handle lists here.
+    """
+    if isinstance(data, list):
+        data.sort()
+        for item in data:
+            deep_sort(item)
+    elif isinstance(data, dict):
+        for item in data.itervalues():
+            deep_sort(item)
+    return None
 
 def cmd(args):
     proc = subprocess.Popen(args, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) # need shell else lctl not found
@@ -73,6 +91,7 @@ def get_nodemap_info():
     for nmap in nodemaps:
         lctl_get_param("nodemap.{nmap}.*".format(nmap=nmap), output)
     to_int(output)
+    deep_sort(output)
 
     return output
 
@@ -100,8 +119,9 @@ def main():
 
     # get system info:
     data = get_nodemap_info()
+    
     live_time = datetime.datetime.now().isoformat()
-    live_yaml = dump(data, Dumper=Dumper)
+    live_yaml = dump(data, Dumper=Dumper, default_flow_style=False)
 
     if len(sys.argv) == 2 and sys.argv[1] == 'export':
         print(live_yaml)
@@ -113,7 +133,8 @@ def main():
         with open(saved_path) as f:
             # load it so we know its valid yaml and sorted:
             saved_data = load(f.read(), Loader=Loader)
-            saved_yaml = dump(saved_data)
+            deep_sort(saved_data)
+            saved_yaml = dump(saved_data, Dumper=Dumper, default_flow_style=False)
         
         # diff:
         for diff in difflib.unified_diff(saved_yaml.split('\n'), live_yaml.split('\n'), saved_path, 'live', saved_time, live_time):
