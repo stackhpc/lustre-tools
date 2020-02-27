@@ -70,8 +70,8 @@ def lctl_get_param(item, output):
                     accumulate = []
 
                 # handle normal lines:
-                parts = line.split('.')
-                param, value = parts[-1].split('=')
+                param, _ , value = line.partition('=')
+                parts = param.split('.')
                 r = output
                 for p in parts[:-1]:
                     r = r.setdefault(p, {})
