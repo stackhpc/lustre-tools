@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-""" Export lustre nodemap information as yaml
+""" Export live lustre nodemap information as yaml.
 
     Usage:
         nodemap.py export
-        nodemap.py diff FILE
     
     In the yaml output:
     - Simple values (i.e. which aren't themselves mappings or lists) are either ints or strings.
-    - Lists and dicts are sorted to ensure predictable output.
+    - Lists and mappings are sorted to ensure predictable output.
 """
 from __future__ import print_function
 __version__ = "0.0"
@@ -22,10 +21,7 @@ except ImportError:
     from yaml import Loader, Dumper
 
 def deep_sort(data):
-    """ In-place sort of any lists in a nested dict/list datastructure.
-    
-        NB pyyaml sorts dicts when dump()ing so only need to handle lists here.
-    """
+    """ In-place sort of any lists in a nested dict/list datastructure. """
     if isinstance(data, list):
         data.sort()
         for item in data:
@@ -35,15 +31,27 @@ def deep_sort(data):
             deep_sort(item)
     return None
 
-def cmd(args):
-    proc = subprocess.Popen(args, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) # need shell else lctl not found
+def cmd(cmdline):
+    """ Run a space-separated command and return its stdout/stderr.
+
+        Uses shell, blocks until subprocess returns.
+    """
+    proc = subprocess.Popen(cmdline, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) # need shell else lctl not found
     stdout, stderr = proc.communicate()
     return stdout, stderr
 
 def lctl_get_param(item, output):
-    """ TODO:
-        NB output gets modified!
-        format: nested dicts, values may be nested list/dicts (including empty ones) or strings.
+    """ Get a lustre parameter.
+
+        A wrapper for `lctl get_param`.
+    
+        Args:
+            item: str, path to parameter to query - see `lctl get_param --help`
+            output: dict which will be modified with results, may be empty.
+        
+        The output dict is a nested datastructure containing dicts, lists (either of which may be empty), strs or ints.
+        Dict keys are always strs. The structure of this (i.e. the nested keys) follows the path-line structure of lctl
+        parameters. The same dict may be passed to this function multiple times to build up results from several parameters.
     """
     s, e = cmd("sudo lctl get_param '{item}'".format(item=item)) # need quoting around `item` to avoid shell expansion of ".*" !
     lines = s.strip().split('\n')
@@ -117,29 +125,10 @@ def to_int(data, key_or_idx=None):
 
 def main():
 
-    # get system info:
-    data = get_nodemap_info()
-    
-    live_time = datetime.datetime.now().isoformat()
-    live_yaml = dump(data, Dumper=Dumper, default_flow_style=False)
-
     if len(sys.argv) == 2 and sys.argv[1] == 'export':
+        data = get_nodemap_info()
+        live_yaml = dump(data, Dumper=Dumper, default_flow_style=False)
         print(live_yaml)
-    elif len(sys.argv) == 3 and sys.argv[1] == 'diff':
-            
-        # use file as "from":
-        saved_path = sys.argv[-1]
-        saved_time = datetime.datetime.fromtimestamp(os.path.getmtime(saved_path)).isoformat()
-        with open(saved_path) as f:
-            # load it so we know its valid yaml and sorted:
-            saved_data = load(f.read(), Loader=Loader)
-            deep_sort(saved_data)
-            saved_yaml = dump(saved_data, Dumper=Dumper, default_flow_style=False)
-        
-        # diff:
-        for diff in difflib.unified_diff(saved_yaml.split('\n'), live_yaml.split('\n'), saved_path, 'live', saved_time, live_time):
-            print(diff)
-
     else:
         print('ERROR: invalid commandline, help follows:')
         print(__doc__)
