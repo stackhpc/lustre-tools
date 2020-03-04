@@ -78,10 +78,12 @@ def lctl_get_param(item, output):
                     accumulate = []
 
                 # handle normal lines:
-                param, _ , value = line.partition('=')
-                parts = param.split('.')
+                dotted_param, _ , value = line.partition('=')
+                parts = dotted_param.split('.')
+                parents = parts[:-1]
+                param = parts[-1]
                 r = output
-                for p in parts[:-1]:
+                for p in parents:
                     r = r.setdefault(p, {})
                 r[param] = value
 
