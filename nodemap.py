@@ -7,6 +7,18 @@
     In the yaml output:
     - Simple values (i.e. which aren't themselves mappings or lists) are either ints or strings.
     - Lists and mappings are sorted to ensure predictable output.
+
+    WIP:
+        nodemap.py import FILE
+        nodemap.py diff FILE_A FILE_B
+
+    TODO: by default (?) ignore nodemap.*.exports, nodemap.*.sepol
+    TODO: provide stdin for import?
+    TODO: provide functions to change things
+    TODO: have to work out how to get nodemaps themseles in there!
+    TODO: import will need sudo!
+
+    note nodemap.*.ranges will change if instances are recreated, but that's ok from an ansible PoV.
 """
 from __future__ import print_function
 __version__ = "0.0"
@@ -140,6 +152,7 @@ def partition(left, right):
     return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
 
 def diff(left, right):
+    """ Returns a sequence of diffs: (keyparts, left, right) """
 
     stack = [([], left, right)]
     currkey = []
@@ -160,6 +173,38 @@ def diff(left, right):
             elif k in right_keys: # only
                 result.append((keyparts + [k], None, right[k]))
     return result
+
+# changes for nodemap.*:
+def nodemap_active(new):
+    # can just overwrite old value
+    print("lctl nodemap_activate new")
+
+#     admin_nodemap: lctl nodemap_modify --name NAME --property admin --value VALUE
+#     squash_gid: lctl nodemap_modify --name NAME --property squash_gid --value VALUE
+#     squash_uid lctl nodemap_modify --name NAME --property squash_uid --value VALUE
+#     trusted_nodemap: lctl nodemap_modify --name NAME --property trusted --value VALUE
+#     deny_unknown: lctl nodemap_modify --name NAME --property deny_unknown --value VALUE
+def nodemap_property(nodemap_name, property, value):
+    # can just overwrite old value
+    print("lctl nodemap_modify --name {nodemap_name} --property {property} --value {new}".format(nodemap_name=nodemap_name, property=property, value=value))
+
+#     fileset: lctl nodemap_set_fileset --name NAME --fileset VALUE
+def nodemap_fileset(nodemap_name, value):
+    print("lctl nodemap_set_fileset --name {nodemap} --fileset {new}".format(nodemap_name=nodemap_name, value=value))
+
+# NAME: lctl nodemap_add / _del NAME
+#     (property ones are always set, just possibly to a default value)
+
+#     audit_mode: IGNORE
+#     exports: IGNORE 
+#     id: IGNORE 
+#     map_mode: IGNORE
+#     sepol: IGNORE
+    
+#     (this is also always set, just might be to '')
+    
+#     idmap: TODO
+#     ranges: TODO    
 
 def main():
 
