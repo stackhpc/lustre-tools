@@ -125,16 +125,62 @@ def to_int(data, key_or_idx=None):
             data[key_or_idx] = int(value)
         return
 
+def from_file(path):
+    """ load nodemap info from a file into normalised form """
+    with open(path) as f:
+        nodemap = load(f.read(), Loader=Loader)
+        deep_sort(nodemap)
+    return nodemap
+
+def partition(left, right):
+    """ Given two dicts, return a tuple of sorted keys:
+        (left_only, both, right_only)
+    """
+    leftkeys, rightkeys = set(left.keys()), set(right.keys())
+    return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
+
+def diff(left, right):
+
+    stack = [([], left, right)]
+    currkey = []
+    result = []
+    while stack:
+        keyparts, left, right = stack.pop()
+        all_keys = sorted(set(left.keys()).union(right.keys()))
+        left_keys, right_keys = left.keys(), right.keys()
+        for k in all_keys:
+            if k in left_keys and k in right_keys:
+                if left[k] != right[k]:
+                    if isinstance(left[k], dict) and isinstance(right[k], dict):
+                        stack.append((keyparts + [k], left[k], right[k]))
+                    else:
+                        result.append((keyparts + [k], left[k], right[k]))
+            elif k in left_keys: # only
+                result.append((keyparts + [k], left[k], None))
+            elif k in right_keys: # only
+                result.append((keyparts + [k], None, right[k]))
+    return result
+
 def main():
 
-    if len(sys.argv) == 2 and sys.argv[1] == 'export':
-        data = get_nodemap_info()
-        live_yaml = dump(data, Dumper=Dumper, default_flow_style=False)
-        print(live_yaml)
-    else:
+    if len(sys.argv) < 2:
         print('ERROR: invalid commandline, help follows:')
         print(__doc__)
         exit(1)
+
+    live_nodemap = get_nodemap_info()
+    if sys.argv[1] == 'export':
+        live_yaml = dump(live_nodemap, Dumper=Dumper, default_flow_style=False)
+        print(live_yaml)
+    elif sys.argv[1] == 'diff':
+        import_nodemap = from_file(sys.argv[2])
+        import_nodemap2 = from_file(sys.argv[3])
+        for difference in diff(live_nodemap, import_nodemap):
+            print(difference)
+    elif sys.argv[1] == 'import':
+        import_nodemap = from_file(sys.argv[2])
+        for difference in diff(live_nodemap, import_nodemap):
+            print(difference)
     
 if __name__ == '__main__':
     main()
