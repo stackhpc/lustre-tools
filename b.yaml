@@ -1,0 +1,22 @@
+nodemap:
+  active: 1
+  nodemap_a:
+    admin_nodemap: 0
+    audit_mode: 1
+    deny_unknown: 0
+    exports: []
+    fileset: ''
+    id: 1
+    idmap:
+      - client_id: 2999
+        fs_id: 3100
+        idtype: uid
+    map_mode: both
+    ranges:
+    - end_nid: 192.168.41.1@tcp1
+      id: 4
+      start_nid: 192.168.41.1@tcp1
+    sepol: ''
+    squash_gid: 99
+    squash_uid: 99
+    trusted_nodemap: 1

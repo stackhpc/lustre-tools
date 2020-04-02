@@ -3,6 +3,12 @@
 
     Usage:
         nodemap.py export
+        nodemap.py diff FILE_A [FILE_B]
+        nodemap.py import FILE
+
+    The first form prints the current lustre nodemap configuration to stdout as yaml.
+    The second form WHAT'S OUTPUT??
+
     
     In the yaml output:
     - Simple values (i.e. which aren't themselves mappings or lists) are either ints or strings.
@@ -10,7 +16,7 @@
 
     WIP:
         nodemap.py import FILE
-        nodemap.py diff FILE_A FILE_B
+        nodemap.py diff FILE_A [FILE_B]
 
     TODO: by default (?) ignore nodemap.*.exports, nodemap.*.sepol
     TODO: provide stdin for import?
@@ -172,6 +178,7 @@ def diff(left, right):
                 result.append((keyparts + [k], left[k], None))
             elif k in right_keys: # only
                 result.append((keyparts + [k], None, right[k]))
+
     return result
 
 # changes for nodemap.*:
@@ -206,6 +213,43 @@ def nodemap_fileset(nodemap_name, value):
 #     idmap: TODO
 #     ranges: TODO    
 
+
+def diff_to_yaml(diff):
+    """ take a diff sequence and generate pseudo-yaml output """
+
+    # can assume keyparts are sorted, b/c inputs to diff will be
+    current = []
+    for d in diff:
+        keyparts, left, right = d
+        if left is None:
+            symbol = '-'
+            out = right
+        elif right is None:
+            symbol = '+'
+            out = left
+        else:
+            symbol = '?'
+            out = right
+        print(symbol, '.'.join(keyparts), ':')
+        out_yaml_lines = dump(out).split('\n')
+        out_formatted = ['%s %s' % (symbol, s) for s in out_yaml_lines]
+        print('\n'.join(out_formatted))
+        
+        # # count number of matching parts
+        # for i in range(len(keyparts)): # TODO: what if current < keyparts:
+        #     if len(current) == 0 or i == (len(current) - 1):
+        #         break
+        #     elif keyparts[i] != current[i]:
+        #         break
+        # start = keyparts[:i]
+        # from_end = i - len(keyparts)
+        # end = keyparts[from_end:]
+        # indent = len('.'.join(start))
+        # print(' ' * indent + '.'.join(end))
+        # current = keyparts
+
+    # nah so behaviour has to depend on whether the value is a dict or not
+
 def main():
 
     if len(sys.argv) < 2:
@@ -218,14 +262,22 @@ def main():
         live_yaml = dump(live_nodemap, Dumper=Dumper, default_flow_style=False)
         print(live_yaml)
     elif sys.argv[1] == 'diff':
-        import_nodemap = from_file(sys.argv[2])
-        import_nodemap2 = from_file(sys.argv[3])
-        for difference in diff(live_nodemap, import_nodemap):
-            print(difference)
+        if len(sys.argv) == 4:
+            nodemap_a = from_file(sys.argv[2])
+            nodemap_b = from_file(sys.argv[3])
+        elif len(sys.argv) == 3:
+            nodemap_a = live_nodemap
+            nodemap_b = from_file(sys.argv[2])
+        differences = diff(nodemap_a, nodemap_b)
+        diff_to_yaml(differences)
+        #print(difference)
+
     elif sys.argv[1] == 'import':
         import_nodemap = from_file(sys.argv[2])
         for difference in diff(live_nodemap, import_nodemap):
             print(difference)
+    else:
+        exit('incorrect command-line')
     
 if __name__ == '__main__':
     main()
