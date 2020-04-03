@@ -25,6 +25,12 @@
     TODO: import will need sudo!
 
     note nodemap.*.ranges will change if instances are recreated, but that's ok from an ansible PoV.
+
+    TODO: internal canonical form means:
+    - process keys in sorted order (have to do this at each operation as using normal dicts
+    - lists are sorted (b/c lustre essentially treats them as unordered)
+    - simple values (i.e. not dicts or lists) are either str or int - latter needs to be explicitly converted
+
 """
 from __future__ import print_function
 __version__ = "0.0"
@@ -38,16 +44,7 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 
-def deep_sort(data):
-    """ In-place sort of any lists in a nested dict/list datastructure. """
-    if isinstance(data, list):
-        data.sort()
-        for item in data:
-            deep_sort(item)
-    elif isinstance(data, dict):
-        for item in data.itervalues():
-            deep_sort(item)
-    return None
+SAME, CHANGE, ADD, DELETE = range(4)
 
 def cmd(cmdline):
     """ Run a space-separated command and return its stdout/stderr.
@@ -109,8 +106,11 @@ def lctl_get_param(item, output):
                 accumulate.append(line)
     return output
     
-def get_nodemap_info():
-    """ TODO: """
+def load_live():
+    """ Load live nodemap information.
+    
+        Returns a nested datastructure in normalised form.
+    """
     output = {}
     lctl_get_param("nodemap.*", output)
     s, e = cmd("lctl nodemap_info",) # need quoting to avoid shell expansion!
@@ -122,6 +122,28 @@ def get_nodemap_info():
     deep_sort(output)
 
     return output
+
+def load_from_file(path):
+    """ Load nodemap info from a file.
+    
+        Returns a nested datastructure in normalised form.
+    """
+    with open(path) as f:
+        nodemap = load(f.read(), Loader=Loader)
+        deep_sort(nodemap)
+        # to_int() not needed as file will have been saved with ints
+    return nodemap
+
+def deep_sort(data):
+    """ In-place sort of any lists in a nested dict/list datastructure. """
+    if isinstance(data, list):
+        data.sort()
+        for item in data:
+            deep_sort(item)
+    elif isinstance(data, dict):
+        for item in data.itervalues():
+            deep_sort(item)
+    return None
 
 def to_int(data, key_or_idx=None):
     """ Change ints-as-strs in nested python lists/dicts to ints
@@ -143,42 +165,60 @@ def to_int(data, key_or_idx=None):
             data[key_or_idx] = int(value)
         return
 
-def from_file(path):
-    """ load nodemap info from a file into normalised form """
-    with open(path) as f:
-        nodemap = load(f.read(), Loader=Loader)
-        deep_sort(nodemap)
-    return nodemap
-
-def partition(left, right):
-    """ Given two dicts, return a tuple of sorted keys:
-        (left_only, both, right_only)
-    """
-    leftkeys, rightkeys = set(left.keys()), set(right.keys())
-    return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
-
-def diff(left, right):
-    """ Returns a sequence of diffs: (keyparts, left, right) """
-
-    stack = [([], left, right)]
+def flatten(data):
+    stack = [([], data)]
     currkey = []
     result = []
     while stack:
-        keyparts, left, right = stack.pop()
-        all_keys = sorted(set(left.keys()).union(right.keys()))
-        left_keys, right_keys = left.keys(), right.keys()
-        for k in all_keys:
-            if k in left_keys and k in right_keys:
-                if left[k] != right[k]:
-                    if isinstance(left[k], dict) and isinstance(right[k], dict):
-                        stack.append((keyparts + [k], left[k], right[k]))
-                    else:
-                        result.append((keyparts + [k], left[k], right[k]))
-            elif k in left_keys: # only
-                result.append((keyparts + [k], left[k], None))
-            elif k in right_keys: # only
-                result.append((keyparts + [k], None, right[k]))
+        keyparts, data = stack.pop(0)
+        #print('keyparts:', keyparts)
+        for k in sorted(data.keys()):
+            if isinstance(data[k], dict):
+                stack.append((keyparts + [k], data[k]))
+                #print('stack append', keyparts + [k])
+            else:
+                result.append((keyparts + [k], data[k]))
+                #print('results append', keyparts + [k])
+    return result
 
+def diff(left, right):
+    """ TODO """
+
+
+    # print(sorted(left['nodemap'].keys()))
+    # print(sorted(right['nodemap'].keys()))
+    # exit()
+
+    # for lnodemaps in left['nodemap'].keys():
+    #     pr
+
+    # left_flat = flatten(left)
+    # right_flat = flatten(right)
+
+
+    stack = [(left, right)]
+    result = {}
+    while stack:
+        left, right = stack.pop(0)
+        for k in sorted(set(left.keys()).union(right.keys())):
+            if k in left and k not in right:
+                result[k] = (left[k], None) # delete
+            elif k in right and k not in left:
+                # add: depends on whether value is a dict or not
+                #if isinstance(right[k], dict):
+                #    TODO
+                #else:
+                    result[k] = (None, right[k])
+            elif left[k] != right[k]:
+                # change: depends on whether value is a dict or not
+                if isinstance(left[k], dict): # assume right is too!
+                    stack.append((left[k], right[k]))
+                    result[k] = {}
+                    result = result[k]
+                else:
+                    result[k] = (left[k], right[k])
+            else:
+                result[k]
     return result
 
 # changes for nodemap.*:
@@ -214,41 +254,41 @@ def nodemap_fileset(nodemap_name, value):
 #     ranges: TODO    
 
 
-def diff_to_yaml(diff):
-    """ take a diff sequence and generate pseudo-yaml output """
+# def diff_to_yaml(diff):
+#     """ take a diff sequence and generate pseudo-yaml output """
 
-    # can assume keyparts are sorted, b/c inputs to diff will be
-    current = []
-    for d in diff:
-        keyparts, left, right = d
-        if left is None:
-            symbol = '-'
-            out = right
-        elif right is None:
-            symbol = '+'
-            out = left
-        else:
-            symbol = '?'
-            out = right
-        print(symbol, '.'.join(keyparts), ':')
-        out_yaml_lines = dump(out).split('\n')
-        out_formatted = ['%s %s' % (symbol, s) for s in out_yaml_lines]
-        print('\n'.join(out_formatted))
+#     # can assume keyparts are sorted, b/c inputs to diff will be
+#     current = []
+#     for d in diff:
+#         keyparts, left, right = d
+#         if left is None:
+#             symbol = '-'
+#             out = right
+#         elif right is None:
+#             symbol = '+'
+#             out = left
+#         else:
+#             symbol = '?'
+#             out = right
+#         print(symbol, '.'.join(keyparts), ':')
+#         out_yaml_lines = dump(out).split('\n')
+#         out_formatted = ['%s %s' % (symbol, s) for s in out_yaml_lines]
+#         print('\n'.join(out_formatted))
         
-        # # count number of matching parts
-        # for i in range(len(keyparts)): # TODO: what if current < keyparts:
-        #     if len(current) == 0 or i == (len(current) - 1):
-        #         break
-        #     elif keyparts[i] != current[i]:
-        #         break
-        # start = keyparts[:i]
-        # from_end = i - len(keyparts)
-        # end = keyparts[from_end:]
-        # indent = len('.'.join(start))
-        # print(' ' * indent + '.'.join(end))
-        # current = keyparts
+#         # # count number of matching parts
+#         # for i in range(len(keyparts)): # TODO: what if current < keyparts:
+#         #     if len(current) == 0 or i == (len(current) - 1):
+#         #         break
+#         #     elif keyparts[i] != current[i]:
+#         #         break
+#         # start = keyparts[:i]
+#         # from_end = i - len(keyparts)
+#         # end = keyparts[from_end:]
+#         # indent = len('.'.join(start))
+#         # print(' ' * indent + '.'.join(end))
+#         # current = keyparts
 
-    # nah so behaviour has to depend on whether the value is a dict or not
+#     # nah so behaviour has to depend on whether the value is a dict or not
 
 def main():
 
@@ -257,23 +297,29 @@ def main():
         print(__doc__)
         exit(1)
 
-    live_nodemap = get_nodemap_info()
+    live_nodemap = load_live()
     if sys.argv[1] == 'export':
         live_yaml = dump(live_nodemap, Dumper=Dumper, default_flow_style=False)
         print(live_yaml)
+    # DEBUG
+    elif sys.argv[1] == 'debug':
+        for v in flatten(live_nodemap):
+            print(v)
+        exit()
     elif sys.argv[1] == 'diff':
         if len(sys.argv) == 4:
-            nodemap_a = from_file(sys.argv[2])
-            nodemap_b = from_file(sys.argv[3])
+            nodemap_a = load_from_file(sys.argv[2])
+            nodemap_b = load_from_file(sys.argv[3])
         elif len(sys.argv) == 3:
             nodemap_a = live_nodemap
-            nodemap_b = from_file(sys.argv[2])
+            nodemap_b = load_from_file(sys.argv[2])
         differences = diff(nodemap_a, nodemap_b)
-        diff_to_yaml(differences)
+        pprint.pprint(differences)
+        #diff_to_yaml(differences)
         #print(difference)
 
     elif sys.argv[1] == 'import':
-        import_nodemap = from_file(sys.argv[2])
+        import_nodemap = load_from_file(sys.argv[2])
         for difference in diff(live_nodemap, import_nodemap):
             print(difference)
     else:
