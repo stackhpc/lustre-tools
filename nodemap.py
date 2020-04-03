@@ -189,21 +189,20 @@ def partition(left, right):
     return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
 
 def diff(left, right):
-    """ TODO """
+    """ Return a dict containing only changed keys/values: values will be [left, right] where either may be none for additions/deletions """
     result = {}
-    #print('keypath:', keypath)
     if isinstance(left, dict) and isinstance(right, dict):
         left_only, both, right_only = partition(left, right)
         for k in left_only: # deleted
-            result[k] = (left[k], None)
+            result[k] = [left[k], None]
         for k in right_only: # added
-            result[k] = (None, right[k])
+            result[k] = [None, right[k]]
         for k in both:
             subdict = diff(left[k], right[k])
             if subdict: # i.e. dict is not empty
                 result[k] = subdict
     elif left != right:
-        return (left, right)
+        return [left, right]
     return result
     
 # changes for nodemap.*:
@@ -299,9 +298,13 @@ def main():
             nodemap_a = live_nodemap
             nodemap_b = load_from_file(sys.argv[2])
         differences = diff(nodemap_a, nodemap_b)
-        pprint.pprint(differences)
+        # for v in flatten(differences):
+
+        #     print(v)
+        #pprint.pprint(differences)
+
         #diff_to_yaml(differences)
-        #print(difference)
+        print(dump(differences))
 
     elif sys.argv[1] == 'import':
         import_nodemap = load_from_file(sys.argv[2])
