@@ -189,7 +189,15 @@ def partition(left, right):
     return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
 
 def diff(left, right):
-    """ Return a dict containing only changed keys/values: values will be [left, right] where either may be none for additions/deletions """
+    """ Find differences between nested dicts `left` and `right`.
+    
+        The values in input dicts may NOT be tuples but any other type (including dicts and lists) is ok.
+
+        Returns a nested dict describing only changes from `left` to `right`:
+        - Keys will be present for added/deleted keys (& values) or changed values, either at the key's level or in nested dicts.
+        - If a value is a tuple it defines `(left_value, right_value)`, where `left_value` is None if `right` added a key and `right_value`
+          is None if `right` deleted a key.
+    """
     result = {}
     if isinstance(left, dict) and isinstance(right, dict):
         left_only, both, right_only = partition(left, right)
@@ -237,31 +245,38 @@ def nodemap_fileset(nodemap_name, value):
 #     idmap: TODO
 #     ranges: TODO    
 
-
+ 
 def diff_to_yaml(diff, depth=0, marker=''):
+    """ Return a multi-line string of pseudo-yaml from a nested dict produced by `diff()`.
+    
+        Output is like a yaml version of the original dicts, except that deletions are prefixed with '<'
+        and additions with '>'. Note that:
+            - Modified values are shown as a deletion and addition.
+            - Keys present in both "left" and "right" sides (i.e. needed for changes at deeper nesting levels) are not prefixed with anything.
+    """
+
+    indent = '  '
     lines = []
     for k in diff:
         if isinstance(diff[k], dict):
             #print('dict', k)
-            lines.append(' ' * depth + '%s:' % k)
+            lines.append(indent * depth + '%s:' % k)
             lines.append(diff_to_yaml(diff[k], depth=depth+1))
 
         elif isinstance(diff[k], tuple): # is a left/right pair:
-            #print('tuple', k)
             left, right = diff[k]
-            if isinstance(left, dict): # right will be too
+            if isinstance(left, dict):
                 lines.append('<' + ' ' * depth + '%s:' % k)
                 lines.append(diff_to_yaml(left, depth=depth+1, marker='<'))
             elif left is not None:
-                lines.append('<' + ' ' * depth + '%s: %s' % (k, left))
-            if isinstance(right, dict): # right will be too
-                lines.append('>' + ' ' * depth + '%s:' % k)
+                lines.append('<' + indent * depth + '%s: %s' % (k, left))
+            if isinstance(right, dict):
+                lines.append('>' + indent * depth + '%s:' % k)
                 lines.append(diff_to_yaml(right, depth=depth+1, marker='>'))
             elif right is not None:
-                lines.append('>' + ' ' * depth + '%s: %s' % (k, right))
+                lines.append('>' + indent * depth + '%s: %s' % (k, right))
         else:
-            #print('unexpected', k, diff[k])
-            lines.append(marker + ' ' * depth + '%s: %s' % (k, diff[k]))
+            lines.append(marker + indent * depth + '%s: %s' % (k, diff[k]))
     return '\n'.join(lines)
     
 def main():
@@ -288,13 +303,6 @@ def main():
             nodemap_a = live_nodemap
             nodemap_b = load_from_file(sys.argv[2])
         differences = diff(nodemap_a, nodemap_b)
-        # for v in flatten(differences):
-
-        #     print(v)
-        #pprint.pprint(differences)
-
-        print(dump(differences))
-        print('----\n')
         print(diff_to_yaml(differences))
         
 
