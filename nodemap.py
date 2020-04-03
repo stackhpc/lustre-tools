@@ -181,46 +181,31 @@ def flatten(data):
                 #print('results append', keyparts + [k])
     return result
 
+def partition(left, right):
+    """ Given two dicts, return a tuple of sorted keys:
+        (left_only, both, right_only)
+    """
+    leftkeys, rightkeys = set(left.keys()), set(right.keys())
+    return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
+
 def diff(left, right):
     """ TODO """
-
-
-    # print(sorted(left['nodemap'].keys()))
-    # print(sorted(right['nodemap'].keys()))
-    # exit()
-
-    # for lnodemaps in left['nodemap'].keys():
-    #     pr
-
-    # left_flat = flatten(left)
-    # right_flat = flatten(right)
-
-
-    stack = [(left, right)]
     result = {}
-    while stack:
-        left, right = stack.pop(0)
-        for k in sorted(set(left.keys()).union(right.keys())):
-            if k in left and k not in right:
-                result[k] = (left[k], None) # delete
-            elif k in right and k not in left:
-                # add: depends on whether value is a dict or not
-                #if isinstance(right[k], dict):
-                #    TODO
-                #else:
-                    result[k] = (None, right[k])
-            elif left[k] != right[k]:
-                # change: depends on whether value is a dict or not
-                if isinstance(left[k], dict): # assume right is too!
-                    stack.append((left[k], right[k]))
-                    result[k] = {}
-                    result = result[k]
-                else:
-                    result[k] = (left[k], right[k])
-            else:
-                result[k]
+    #print('keypath:', keypath)
+    if isinstance(left, dict) and isinstance(right, dict):
+        left_only, both, right_only = partition(left, right)
+        for k in left_only: # deleted
+            result[k] = (left[k], None)
+        for k in right_only: # added
+            result[k] = (None, right[k])
+        for k in both:
+            subdict = diff(left[k], right[k])
+            if subdict: # i.e. dict is not empty
+                result[k] = subdict
+    elif left != right:
+        return (left, right)
     return result
-
+    
 # changes for nodemap.*:
 def nodemap_active(new):
     # can just overwrite old value
