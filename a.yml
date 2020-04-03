@@ -7,7 +7,10 @@ nodemap:
     exports: []
     fileset: ''
     id: 1
-    idmap: []
+    idmap:
+      - client_id: 3120
+        fs_id: 120
+        idtype: gid
     map_mode: both
     ranges:
     - end_nid: 192.168.41.1@tcp1

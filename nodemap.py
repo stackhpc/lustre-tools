@@ -194,15 +194,15 @@ def diff(left, right):
     if isinstance(left, dict) and isinstance(right, dict):
         left_only, both, right_only = partition(left, right)
         for k in left_only: # deleted
-            result[k] = [left[k], None]
+            result[k] = (left[k], None)
         for k in right_only: # added
-            result[k] = [None, right[k]]
+            result[k] = (None, right[k])
         for k in both:
             subdict = diff(left[k], right[k])
             if subdict: # i.e. dict is not empty
                 result[k] = subdict
     elif left != right:
-        return [left, right]
+        return (left, right)
     return result
     
 # changes for nodemap.*:
@@ -238,42 +238,32 @@ def nodemap_fileset(nodemap_name, value):
 #     ranges: TODO    
 
 
-# def diff_to_yaml(diff):
-#     """ take a diff sequence and generate pseudo-yaml output """
+def diff_to_yaml(diff, depth=0, marker=''):
+    lines = []
+    for k in diff:
+        if isinstance(diff[k], dict):
+            #print('dict', k)
+            lines.append(' ' * depth + '%s:' % k)
+            lines.append(diff_to_yaml(diff[k], depth=depth+1))
 
-#     # can assume keyparts are sorted, b/c inputs to diff will be
-#     current = []
-#     for d in diff:
-#         keyparts, left, right = d
-#         if left is None:
-#             symbol = '-'
-#             out = right
-#         elif right is None:
-#             symbol = '+'
-#             out = left
-#         else:
-#             symbol = '?'
-#             out = right
-#         print(symbol, '.'.join(keyparts), ':')
-#         out_yaml_lines = dump(out).split('\n')
-#         out_formatted = ['%s %s' % (symbol, s) for s in out_yaml_lines]
-#         print('\n'.join(out_formatted))
-        
-#         # # count number of matching parts
-#         # for i in range(len(keyparts)): # TODO: what if current < keyparts:
-#         #     if len(current) == 0 or i == (len(current) - 1):
-#         #         break
-#         #     elif keyparts[i] != current[i]:
-#         #         break
-#         # start = keyparts[:i]
-#         # from_end = i - len(keyparts)
-#         # end = keyparts[from_end:]
-#         # indent = len('.'.join(start))
-#         # print(' ' * indent + '.'.join(end))
-#         # current = keyparts
-
-#     # nah so behaviour has to depend on whether the value is a dict or not
-
+        elif isinstance(diff[k], tuple): # is a left/right pair:
+            #print('tuple', k)
+            left, right = diff[k]
+            if isinstance(left, dict): # right will be too
+                lines.append('<' + ' ' * depth + '%s:' % k)
+                lines.append(diff_to_yaml(left, depth=depth+1, marker='<'))
+            elif left is not None:
+                lines.append('<' + ' ' * depth + '%s: %s' % (k, left))
+            if isinstance(right, dict): # right will be too
+                lines.append('>' + ' ' * depth + '%s:' % k)
+                lines.append(diff_to_yaml(right, depth=depth+1, marker='>'))
+            elif right is not None:
+                lines.append('>' + ' ' * depth + '%s: %s' % (k, right))
+        else:
+            #print('unexpected', k, diff[k])
+            lines.append(marker + ' ' * depth + '%s: %s' % (k, diff[k]))
+    return '\n'.join(lines)
+    
 def main():
 
     if len(sys.argv) < 2:
@@ -303,8 +293,10 @@ def main():
         #     print(v)
         #pprint.pprint(differences)
 
-        #diff_to_yaml(differences)
         print(dump(differences))
+        print('----\n')
+        print(diff_to_yaml(differences))
+        
 
     elif sys.argv[1] == 'import':
         import_nodemap = load_from_file(sys.argv[2])

@@ -1,7 +1,7 @@
 nodemap:
-  active: 1
+  active: 0
   nodemap_a:
-    admin_nodemap: 0
+    admin_nodemap: 1
     audit_mode: 1
     deny_unknown: 0
     exports: []
@@ -11,6 +11,9 @@ nodemap:
       - client_id: 2999
         fs_id: 3100
         idtype: uid
+      - client_id: 3120
+        fs_id: 120
+        idtype: gid
     map_mode: both
     ranges:
     - end_nid: 192.168.41.1@tcp1
