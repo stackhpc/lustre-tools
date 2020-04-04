@@ -247,7 +247,7 @@ def make_changes(changes):
     """
 
     for (keypath, action, value) in changes:
-        print('#', keypath, action, value)
+        print('#', keypath, action, repr(value))
         if keypath[0] != 'nodemap':
             raise ValueError("'nodemap' not at start of key path %s: is this a nodemap diff?" % keypath)
     
@@ -307,7 +307,7 @@ def changes_to_yaml(changes):
             lines.append('%s%s:' % ((' ' * nindent * level), k))
         # output actual change:
         symbol = '<' if action == 'DEL' else '>'
-        lines.append(symbol + (' ' * (nindent * (level+1) - 1)) + keypath[-1] + ': ' + str(value)) # TODO: FIXME: empty fileset should be ''
+        lines.append(symbol + (' ' * (nindent * (level+1) - 1)) + keypath[-1] + ': ' + (str(value) or repr(value)))
         
         curr_keypath = keypath
     return '\n'.join(lines)
