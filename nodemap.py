@@ -66,6 +66,10 @@ def cmd(cmdline):
     stdout, stderr = proc.communicate()
     return stdout, stderr
 
+def call(cmdline):
+    proc = subprocess.Popen(cmdline, shell=True) # need shell else lctl not found
+    proc.wait()
+
 def lctl_get_param(item, output):
     """ Get a lustre parameter.
 
@@ -227,13 +231,13 @@ def diff(left, right):
     return output
     
 # changes for nodemap.*:
-nodemap_actions = {'nodemap_activate':"lctl nodemap_activate {new}", # can just overwrite old value
-                   'nodemap_add':"lctl nodemap_add {name}",
-                   'nodemap_del':"lctl nodemap_del {name}",
-                   'set_fileset':"lctl nodemap_set_fileset --name {nodemap} --fileset {new}",
-                   'nodemap_modify':"lctl nodemap_modify --name {nodemap} --property {property} --value {new}",
-                   'change_idmap':"lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}",
-                   'change_range':"lctl nodemap_{mode}_range --name {nodemap} --range {nid}",
+NODEMAP_ACTIONS = {'nodemap_activate':"sudo lctl nodemap_activate {new}", # can just overwrite old value
+                   'nodemap_add':"sudo lctl nodemap_add {name}",
+                   'nodemap_del':"sudo lctl nodemap_del {name}",
+                   'set_fileset':"sudo lctl nodemap_set_fileset --name {nodemap} --fileset {new}",
+                   'nodemap_modify':"sudo lctl nodemap_modify --name {nodemap} --property {property} --value {new}",
+                   'change_idmap':"sudo lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}",
+                   'change_range':"sudo lctl nodemap_{mode}_range --name {nodemap} --range {nid}",
                    
 }
 NODEMAP_MODIFY = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
@@ -242,16 +246,14 @@ NODEMAP_IGNORE = 'audit_mode exports id map_mode sepol'.split()
 #     idmap: TODO
 #     ranges: TODO    
 
-def make_changes(changes):
+def make_changes(changes, func=call):
     """ NB: this is more nodemap-specific, e.g. knows that when nodemap don't need to recurse into parameters, just delete the whole thing.
     """
 
     for (keypath, action, value) in changes:
-        print('#', keypath, action, repr(value))
+        #print('#', keypath, action, repr(value))
         if keypath[0] != 'nodemap':
             raise ValueError("'nodemap' not at start of key path %s: is this a nodemap diff?" % keypath)
-    
-        func = print # TODO: DEBUG:
 
         deleted_nodemaps = []
 
@@ -259,31 +261,31 @@ def make_changes(changes):
         if len(keypath) == 2:
             if nodemap == 'active': # not really a nodemap
                 if action == 'ADD': # don't care about what it was
-                    func(nodemap_actions['nodemap_activate'].format(new=value))
+                    func(NODEMAP_ACTIONS['nodemap_activate'].format(new=value))
             else: # nodemap add/delete
                 if action == 'ADD':
-                    func(nodemap_actions['nodemap_add'].format(name=nodemap))
+                    func(NODEMAP_ACTIONS['nodemap_add'].format(name=nodemap))
                 else:
-                    func(nodemap_actions['nodemap_del'].format(name=nodemap))
+                    func(NODEMAP_ACTIONS['nodemap_del'].format(name=nodemap))
                     deleted_nodemaps.append(nodemap)
         else:
             if nodemap not in deleted_nodemaps: # can't changed properties if we've deleted it!
                 param = keypath[2]
                 if param == 'fileset' and action == 'ADD': # can ignore delete
-                    func(nodemap_actions['set_fileset'].format(nodemap=nodemap, new=value))
+                    func(NODEMAP_ACTIONS['set_fileset'].format(nodemap=nodemap, new=value))
                 elif param in NODEMAP_MODIFY and action == 'ADD': # can ignore delete
-                    func(nodemap_actions['nodemap_modify'].format(nodemap=nodemap, property=param, new=value))
+                    func(NODEMAP_ACTIONS['nodemap_modify'].format(nodemap=nodemap, property=param, new=value))
                 elif param in NODEMAP_IGNORE:
                     pass # TODO: include verbose and ignore options?
                 elif param == 'idmap': # don't ignore delete as need to get rid of old ones
                     for idmap in value:
-                        func(nodemap_actions['change_idmap'].format(mode=action.lower(), nodemap=nodemap, **idmap))
+                        func(NODEMAP_ACTIONS['change_idmap'].format(mode=action.lower(), nodemap=nodemap, **idmap))
                 elif param == 'ranges': # again need to delete old ones
                     for rng in value:
                         start_addr, _, netname = rng['start_nid'].partition('@')
                         end_addr, _, netname   = rng['end_nid'].partition('@') # net name must be the same
                         for addr in ips(start_addr, end_addr):
-                            func(nodemap_actions['change_range'].format(mode=action.lower(), nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
+                            func(NODEMAP_ACTIONS['change_range'].format(mode=action.lower(), nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
 
 def changes_to_yaml(changes):
     """ Return a multi-line string of pseudo-yaml from a nested dict produced by `diff()`.
@@ -332,10 +334,12 @@ def main():
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
         changes = diff(nodemap_a, nodemap_b)
-        #pprint.pprint(changes)
         print(changes_to_yaml(changes))
-        print('----')
-        make_changes(changes)
+        if len(sys.argv) == 4:
+            print('----')
+            make_changes(changes, print)
+        else:
+            make_changes(changes)
     
     elif sys.argv[1] == '--version' and len(sys.argv) == 2:
         print(__version__)
