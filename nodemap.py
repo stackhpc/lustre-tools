@@ -18,7 +18,7 @@
 
     Output from diff/import is similar but with lines prefixed with "<" for deletion and ">" for addition.
 
-    This tool supports all nodemap parameters which can be set using the lustre command-line tools, except for `sepol`.
+    This tool supports all nodemap parameters which can be set using the lustre command-line tools, except for `sepol` and `audit_mode`.
     
     Note: For testing, this also supports usage:
         nodemap.py import FILE_A FILE_B
@@ -57,6 +57,7 @@ def ips(start, end):
     start = struct.unpack('>I', socket.inet_aton(start))[0]
     end = struct.unpack('>I', socket.inet_aton(end))[0]
     return [socket.inet_ntoa(struct.pack('>I', i)) for i in range(start, end + 1)]
+    # TODO: would be nicer to change this into a compact form
 
 def cmd(cmdline):
     """ Run a space-separated command and return its stdout/stderr.
@@ -233,41 +234,38 @@ def diff(left, right):
     
 # changes for nodemap.*:
 NODEMAP_ACTIONS = {'nodemap_activate':"sudo lctl nodemap_activate {new}", # can just overwrite old value
-                   'nodemap_add':"sudo lctl nodemap_add {name}",
-                   'nodemap_del':"sudo lctl nodemap_del {name}",
+                   'nodemap_change':"sudo lctl nodemap_{mode} {name}",
                    'set_fileset':"sudo lctl nodemap_set_fileset --name {nodemap} --fileset {new}",
                    'nodemap_modify':"sudo lctl nodemap_modify --name {nodemap} --property {property} --value {new}",
                    'change_idmap':"sudo lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}",
-                   'change_range':"sudo lctl nodemap_{mode}_range --name {nodemap} --range {nid}",
-                   
-}
+                   'change_range':"sudo lctl nodemap_{mode}_range --name {nodemap} --range {nid}",   
+                  }
 NODEMAP_MODIFY = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
 NODEMAP_IGNORE = 'audit_mode exports id map_mode sepol'.split()
-    
-#     idmap: TODO
-#     ranges: TODO    
 
 def make_changes(changes, func=call):
-    """ NB: this is more nodemap-specific, e.g. knows that when nodemap don't need to recurse into parameters, just delete the whole thing.
+    """ Make changes to the live nodemap config as output from diff().
+    
+        Pass a print function as `func` to output the commands which would normally be run.
     """
 
+    # Unlike other diff functions this is more nodemap-specific, e.g. knows that when nodemap don't need to recurse into parameters, just delete the whole thing.
+
+    deleted_nodemaps = []
     for (keypath, action, value) in changes:
         #print('#', keypath, action, repr(value))
         if keypath[0] != 'nodemap':
             raise ValueError("'nodemap' not at start of key path %s: is this a nodemap diff?" % keypath)
-
-        deleted_nodemaps = []
-
+        
         nodemap = keypath[1]
+        
         if len(keypath) == 2:
             if nodemap == 'active': # not really a nodemap
                 if action == 'ADD': # don't care about what it was
                     func(NODEMAP_ACTIONS['nodemap_activate'].format(new=value))
             else: # nodemap add/delete
-                if action == 'ADD':
-                    func(NODEMAP_ACTIONS['nodemap_add'].format(name=nodemap))
-                else:
-                    func(NODEMAP_ACTIONS['nodemap_del'].format(name=nodemap))
+                func(NODEMAP_ACTIONS['nodemap_change'].format(name=nodemap, mode=action.lower()))
+                if action == 'DEL':
                     deleted_nodemaps.append(nodemap)
         else:
             if nodemap not in deleted_nodemaps: # can't changed properties if we've deleted it!
