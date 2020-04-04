@@ -183,40 +183,60 @@ def partition(left, right):
     leftkeys, rightkeys = set(left.keys()), set(right.keys())
     return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
 
-def diff(left, right):
-    """ Find differences between nested dicts `left` and `right`.
+def flatten(data):
+    """ Flatten a nested dict into a sequence of (keypath, value).
 
-        Returns a sequence of (keyparts, action, value) where TODO:.
-        i.e. unchanged keys/values are not referenced.
-
-        Note that `value` is the old value for deleted keys.
-
-        Modified values are represented as a DELETE followed by an ADD.
+        - `keypath` is a list giving the keys to get to the corresponding value
+        - `value` is the value at this keypath - if this is a nested dict then it is shown as an empty dict {}
+           with the nested values shown at their corresponding keypaths.
     """
-    stack = [([], left, right)]
+    stack = [([], data)]
     results = []
     while stack:
-        keyparts, left, right = stack.pop()
-        if isinstance(left, dict) and isinstance(right, dict):
-            leftkeys, rightkeys = set(left.keys()), set(right.keys())
-            for k in sorted(leftkeys | rightkeys):
-                if k in leftkeys and k not in rightkeys:
-                    results.append((keyparts + [k], 'DEL', None))
-                    stack.append((keyparts + [k], left[k], {}))
-                elif k in rightkeys and k not in leftkeys:
-                    results.append((keyparts + [k], 'ADD', None))
-                    stack.append((keyparts + [k], {}, right[k]))
-                else:
-                    if left[k] != right[k]:
-                    #print('both, left != right', type(left[k]), type(right[k]))
-                    #results.append((keyparts + [k], 'DEL', left[k]))
-                    #results.append((keyparts + [k], 'ADD', right[k]))
-                        stack.append((keyparts + [k], left[k], right[k]))
+        keyparts, data = stack.pop(0)
+        if isinstance(data, dict):
+            results.append((tuple(keyparts), {}))
+            for k in sorted(data.keys()):
+                stack.append((keyparts + [k], data[k]))
         else:
-            if left != right:
-                results.append((keyparts, 'DEL', left))
-                results.append((keyparts, 'ADD', right))
+            results.append((tuple(keyparts), data))
     return results
+
+def diff(left, right):
+    """ Diff nested dicts.
+
+        Returns a sequence of (keypath, action, value).
+
+        Where:
+        - `keypath` is a list giving the keys to get to the corresponding value
+        - `action` is DEL or ADD, with keys with changed values being given as a DEL followed by an ADD
+        - `value` is the value added or deleted - if this is a nested dict it is given as {} with the dict contents
+           shown as DEL/ADD at the corresponding (longer) keypath.
+
+        The returned sequence is in sorted `keypath` order.
+    """
+
+    # convert flattened dicts into dicts with key:=keypath, value:=value for efficent searching for keys
+    dleft = dict((k, v) for (k, v) in flatten(left))
+    dright = dict((k, v) for (k, v) in flatten(right))
+
+    leftkeys = set(dleft.keys())
+    rightkeys = set(dright.keys())
+    output = []
+    for k in sorted(leftkeys | rightkeys):
+        if k in leftkeys and k not in rightkeys:
+            output.append((k, 'DEL', dleft[k]))
+        elif k in rightkeys and k not in leftkeys:
+            output.append((k, 'ADD', dright[k]))
+        elif dleft[k] != dright[k]:
+            output.append((k, 'DEL', dleft[k]))
+            output.append((k, 'ADD', dright[k]))
+    return output
+        
+
+    pprint.pprint(dleft)
+    #fright = flatten(right)
+
         
     
 # changes for nodemap.*:
@@ -303,7 +323,19 @@ def change(diff):
                             for addr in ips(start_addr, end_addr):
                                 func(nodemap_actions['change_range'].format(mode='add', nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
 
-def diff_to_yaml(diff, keyparts=None, marker=''):
+
+def nest():
+    for (keypath, action, value) in diff:
+        
+        print(keypath, action, value)
+        c = out
+        for k in keypath[:-1]:
+            if k not in c:
+                c[k] = {}
+            c = c[k]
+        c[keypath[-1]] = value
+
+def diff_to_yaml(diff):
     """ Return a multi-line string of pseudo-yaml from a nested dict produced by `diff()`.
     
         Output is like a yaml version of the original dicts, except that deletions are prefixed with '<'
@@ -312,27 +344,21 @@ def diff_to_yaml(diff, keyparts=None, marker=''):
             - Keys present in both "left" and "right" sides (i.e. needed for changes at deeper nesting levels) are not prefixed with anything.
     """
 
-    keyparts = [] if keyparts is None else keyparts
-    indent = '  '
     lines = []
-    for k in diff:
-        if isinstance(diff[k], dict):
-            lines.append(indent * len(keyparts) + '%s:' % k) # key
-            lines.append(diff_to_yaml(diff[k], keyparts=keyparts + [k])) # value
-        elif isinstance(diff[k], tuple): # is a left/right pair:
-            left, right = diff[k]
-            if isinstance(left, dict):
-                lines.append('<' + ' ' * len(keyparts) + '%s:' % k) # key
-                lines.append(diff_to_yaml(left, keyparts=keyparts + [k], marker='<')) # value
-            elif left is not None:
-                lines.append('<' + indent * len(keyparts) + '%s: %s' % (k, left)) # key and value
-            if isinstance(right, dict):
-                lines.append('>' + indent * len(keyparts) + '%s:' % k)
-                lines.append(diff_to_yaml(right, keyparts=keyparts + [k], marker='>'))
-            elif right is not None:
-                lines.append('>' + indent * len(keyparts) + '%s: %s' % (k, right))
-        else:
-            lines.append(marker + indent * len(keyparts) + '%s: %s' % (k, diff[k]))
+    nindent = 4
+    curr_keypath = []
+    for (keypath, action, value) in diff:
+        common = [a for a, b in zip(curr_keypath, keypath) if a == b]
+        new = keypath[len(common):]
+        level = len(keypath) - 2
+        # output intermediate keys (no action on these)
+        for i, k in enumerate(new[:-1]):
+            lines.append('%s%s:' % ((' ' * nindent * level), k))
+        # output actual change
+        symbol = '<' if action == 'DEL' else '>'
+        lines.append(symbol + (' ' * (nindent * (level+1) - 1)) + keypath[-1] + ': ' + str(value))
+        
+        curr_keypath = keypath
     return '\n'.join(lines)
             
 def exit_bad_cli():
@@ -342,6 +368,12 @@ def main():
 
     if len(sys.argv) < 2:
         exit_bad_cli()
+    elif sys.argv[1] == 'debug':
+        nodemap_a = load_from_file(sys.argv[-2])
+        nodemap_b = load_from_file(sys.argv[-1])
+        diffs = diff(nodemap_a, nodemap_b)
+        diff_to_yaml(diffs)
+        
     elif sys.argv[1] == 'export' and len(sys.argv) == 2:
         live_nodemap = load_live()
         live_yaml = dump(live_nodemap, Dumper=Dumper, default_flow_style=False)
@@ -350,8 +382,8 @@ def main():
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
         differences = diff(nodemap_a, nodemap_b)
-        pprint.pprint(differences)
-        #print(diff_to_yaml(differences))
+        #pprint.pprint(differences)
+        print(diff_to_yaml(differences))
     elif sys.argv[1] == 'import' and len(sys.argv) in (3, 4): # NB 4-arg form only for testing!!
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
