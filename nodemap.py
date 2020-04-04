@@ -8,34 +8,35 @@
         nodemap.py --help
         nodemap.py --version
 
-    The first form prints the current lustre nodemap configuration to stdout as yaml.
-    The second form WHAT'S OUTPUT??
-
+    The first form outputs the live lustre nodemap configuration to stdout.
+    The second form outputs the changes needed to alter the live nodemap configuration to that defined in the file, or else from config A to config B.
+    The third form imports the given configuration, and outputs the changes made to the live configuration.
     
-    In the yaml output:
-    - Simple values (i.e. which aren't themselves mappings or lists) are either ints or strings.
-    - Lists and mappings are sorted to ensure predictable output.
+    Output from export and configuration files are YAML, with:
+    - Simple values (i.e. which aren't themselves mappings or lists) being only ints or strings.
+    - Lists and mappings sorted to ensure predictable output.
 
-    WIP:
-        nodemap.py import FILE
-        nodemap.py diff FILE_A [FILE_B]
+    Output from diff/import is similar but with lines prefixed with "<" for deletion and ">" for addition.
 
-    TODO: by default (?) ignore nodemap.*.exports, nodemap.*.sepol
+    This tool supports all nodemap parameters which can be set using the lustre command-line tools, except for `sepol`.
+    
+    Note: For testing, this also supports usage:
+        nodemap.py import FILE_A FILE_B
+    In this case it will display (but not actually run) the commands needed to change the config from FILE_A to FILE_B.
+
+    TODO: YAML diff output for [] e.g. ranges, could be better.
     TODO: provide stdin for import?
-    TODO: provide functions to change things
-    TODO: have to work out how to get nodemaps themseles in there!
-    TODO: import will need sudo!
-
-    note nodemap.*.ranges will change if instances are recreated, but that's ok from an ansible PoV.
-
-    TODO: internal canonical form means:
-    - process keys in sorted order (have to do this at each operation as using normal dicts
-    - lists are sorted (b/c lustre essentially treats them as unordered)
-    - simple values (i.e. not dicts or lists) are either str or int - latter needs to be explicitly converted
-
+    TODO: check ranges work propery
+    TODO: fix sudo behaviour
     TODO: note restrictions on NID ranges for import?
 
 """
+
+# internal canonical form for nodemap config is:
+# - keys in sorted order, where consistency is required (note pyyaml outputs sorted keys anyway)
+# - lists are sorted (lusstre treats them as unordered)
+# - simple values (i.e. not dicts or lists) are either str or int - latter needs to be explicitly converted
+
 from __future__ import print_function
 __version__ = "0.0"
 
