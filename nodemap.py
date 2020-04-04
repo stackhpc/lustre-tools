@@ -42,7 +42,7 @@ __version__ = "0.0"
 import subprocess, pprint, sys, re, ast, difflib, datetime, os,  socket, struct
 
 # pyyaml:
-from yaml import load, dump
+from yaml import load, dump # TODO: use safe_load
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
 except ImportError:
@@ -185,28 +185,39 @@ def partition(left, right):
 
 def diff(left, right):
     """ Find differences between nested dicts `left` and `right`.
-    
-        The values in input dicts may NOT be tuples but any other type (including dicts and lists) is ok.
 
-        Returns a nested dict describing only changes from `left` to `right`:
-        - Keys will be present for added/deleted keys (& values) or changed values, either at the key's level or in nested dicts.
-        - If a value is a tuple it defines `(left_value, right_value)`, where `left_value` is None if `right` added a key and `right_value`
-          is None if `right` deleted a key.
+        Returns a sequence of (keyparts, action, value) where TODO:.
+        i.e. unchanged keys/values are not referenced.
+
+        Note that `value` is the old value for deleted keys.
+
+        Modified values are represented as a DELETE followed by an ADD.
     """
-    result = {}
-    if isinstance(left, dict) and isinstance(right, dict):
-        left_only, both, right_only = partition(left, right)
-        for k in left_only: # deleted
-            result[k] = (left[k], None)
-        for k in right_only: # added
-            result[k] = (None, right[k])
-        for k in both:
-            subdict = diff(left[k], right[k])
-            if subdict: # i.e. dict is not empty
-                result[k] = subdict
-    elif left != right:
-        return (left, right)
-    return result
+    stack = [([], left, right)]
+    results = []
+    while stack:
+        keyparts, left, right = stack.pop()
+        if isinstance(left, dict) and isinstance(right, dict):
+            leftkeys, rightkeys = set(left.keys()), set(right.keys())
+            for k in sorted(leftkeys | rightkeys):
+                if k in leftkeys and k not in rightkeys:
+                    results.append((keyparts + [k], 'DEL', None))
+                    stack.append((keyparts + [k], left[k], {}))
+                elif k in rightkeys and k not in leftkeys:
+                    results.append((keyparts + [k], 'ADD', None))
+                    stack.append((keyparts + [k], {}, right[k]))
+                else:
+                    if left[k] != right[k]:
+                    #print('both, left != right', type(left[k]), type(right[k]))
+                    #results.append((keyparts + [k], 'DEL', left[k]))
+                    #results.append((keyparts + [k], 'ADD', right[k]))
+                        stack.append((keyparts + [k], left[k], right[k]))
+        else:
+            if left != right:
+                results.append((keyparts, 'DEL', left))
+                results.append((keyparts, 'ADD', right))
+    return results
+        
     
 # changes for nodemap.*:
 nodemap_actions = {'nodemap_activate':"lctl nodemap_activate {new}", # can just overwrite old value
@@ -339,7 +350,8 @@ def main():
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
         differences = diff(nodemap_a, nodemap_b)
-        print(diff_to_yaml(differences))
+        pprint.pprint(differences)
+        #print(diff_to_yaml(differences))
     elif sys.argv[1] == 'import' and len(sys.argv) in (3, 4): # NB 4-arg form only for testing!!
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
