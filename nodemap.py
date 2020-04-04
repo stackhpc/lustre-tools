@@ -176,13 +176,6 @@ def to_int(data, key_or_idx=None):
             data[key_or_idx] = int(value)
         return
 
-def partition(left, right):
-    """ Given two dicts, return a tuple of sorted keys:
-        (left_only, both, right_only)
-    """
-    leftkeys, rightkeys = set(left.keys()), set(right.keys())
-    return (sorted(leftkeys - rightkeys), sorted(leftkeys & rightkeys), sorted(rightkeys - leftkeys))
-
 def flatten(data):
     """ Flatten a nested dict into a sequence of (keypath, value).
 
@@ -232,12 +225,6 @@ def diff(left, right):
             output.append((k, 'DEL', dleft[k]))
             output.append((k, 'ADD', dright[k]))
     return output
-        
-
-    pprint.pprint(dleft)
-    #fright = flatten(right)
-
-        
     
 # changes for nodemap.*:
 nodemap_actions = {'nodemap_activate':"lctl nodemap_activate {new}", # can just overwrite old value
@@ -255,87 +242,50 @@ NODEMAP_IGNORE = 'audit_mode exports id map_mode sepol'.split()
 #     idmap: TODO
 #     ranges: TODO    
 
-def change(diff):
+def make_changes(changes):
     """ NB: this is more nodemap-specific, e.g. knows that when nodemap don't need to recurse into parameters, just delete the whole thing.
     """
 
-    if diff.keys() != ['nodemap']:
-        raise ValueError("expected only key 'nodemap', got %s" % diff.keys())
+    for (keypath, action, value) in changes:
+        print('#', keypath, action, value)
+        if keypath[0] != 'nodemap':
+            raise ValueError("'nodemap' not at start of key path %s: is this a nodemap diff?" % keypath)
     
-    func = print # TODO: DEBUG:
+        func = print # TODO: DEBUG:
 
-    nodemaps = diff['nodemap']
-    for nodemap in nodemaps:
-        if nodemap == 'active':
-            old, new = nodemaps[nodemap]
-            func(nodemap_actions['nodemap_activate'].format(new=new))
-        else:
-            if isinstance(nodemaps[nodemap], tuple): # have an add or deletion
-                print('DEBUG: in old/new path')
-                old, new = nodemaps[nodemap]
-                if new is None: # delete
-                    func(nodemap_actions['nodemap_del'].format(name=nodemap))
-                elif old is None: # add
+        deleted_nodemaps = []
+
+        nodemap = keypath[1]
+        if len(keypath) == 2:
+            if nodemap == 'active': # not really a nodemap
+                if action == 'ADD': # don't care about what it was
+                    func(nodemap_actions['nodemap_activate'].format(new=value))
+            else: # nodemap add/delete
+                if action == 'ADD':
                     func(nodemap_actions['nodemap_add'].format(name=nodemap))
                 else:
-                    raise ValueError('unexpected case for %s: %r' % (nodemap, nodemaps[nodemap]))
-            else:
-                new = nodemaps[nodemap]
-            # now deal with properties:
-            if new is not None: # don't need to handle parameters on deleted nodemaps
-                print('DEBUG: in new path')
-                for param_name in new:
-                    if isinstance(new[param_name], tuple): # changing existing nodemap
-                        new_value = new[param_name][1]
-                    else: # adding new nodemap
-                        new_value = new[param_name]
-                    if param_name == 'fileset':
-                        func(nodemap_actions['set_fileset'].format(nodemap=nodemap, new=new_value))
-                    elif param_name in NODEMAP_MODIFY:
-                        func(nodemap_actions['nodemap_modify'].format(nodemap=nodemap, property=param_name, new=new_value))
-                    elif param_name in NODEMAP_IGNORE:
-                        pass # TODO: include verbose and ignore options?
-                    elif param_name == 'idmap':
-                        if isinstance(new[param_name], tuple): 
-                            # cheat - just delete all old ones
-                            for old_idmap in new[param_name][0]:
-                                func(nodemap_actions['change_idmap'].format(mode='del', nodemap=nodemap, **old_idmap))
-                            new_idmaps = new[param_name][1]
-                        else:
-                            new_idmaps = new[param_name]
-                        # now add new ones
-                        for new_idmap in new_idmaps:
-                            func(nodemap_actions['change_idmap'].format(mode='add', nodemap=nodemap, **new_idmap))
-                    elif param_name == 'ranges':
-                        if isinstance(new[param_name], tuple): 
-                            # cheat - just delete all old ones
-                            for old_rng in new[param_name][0]:
-                                start_addr, _, netname = old_rng['start_nid'].partition('@')
-                                end_addr = old_rng['end_nid'].partition('@')[0] # net name must be the same
-                                for addr in ips(start_addr, end_addr):
-                                    func(nodemap_actions['change_range'].format(mode='del', nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
-                            new_ranges = new[param_name][1]
-                        else:
-                            new_ranges = new[param_name]
-                        for new_rng in new_ranges:
-                            start_addr, _, netname = new_rng['start_nid'].partition('@')
-                            end_addr = new_rng['end_nid'].partition('@')[0] # net name must be the same
-                            for addr in ips(start_addr, end_addr):
-                                func(nodemap_actions['change_range'].format(mode='add', nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
+                    func(nodemap_actions['nodemap_del'].format(name=nodemap))
+                    deleted_nodemaps.append(nodemap)
+        else:
+            if nodemap not in deleted_nodemaps: # can't changed properties if we've deleted it!
+                param = keypath[2]
+                if param == 'fileset' and action == 'ADD': # can ignore delete
+                    func(nodemap_actions['set_fileset'].format(nodemap=nodemap, new=value))
+                elif param in NODEMAP_MODIFY and action == 'ADD': # can ignore delete
+                    func(nodemap_actions['nodemap_modify'].format(nodemap=nodemap, property=param, new=value))
+                elif param in NODEMAP_IGNORE:
+                    pass # TODO: include verbose and ignore options?
+                elif param == 'idmap': # don't ignore delete as need to get rid of old ones
+                    for idmap in value:
+                        func(nodemap_actions['change_idmap'].format(mode=action.lower(), nodemap=nodemap, **idmap))
+                elif param == 'ranges': # again need to delete old ones
+                    for rng in value:
+                        start_addr, _, netname = rng['start_nid'].partition('@')
+                        end_addr, _, netname   = rng['end_nid'].partition('@') # net name must be the same
+                        for addr in ips(start_addr, end_addr):
+                            func(nodemap_actions['change_range'].format(mode=action.lower(), nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
 
-
-def nest():
-    for (keypath, action, value) in diff:
-        
-        print(keypath, action, value)
-        c = out
-        for k in keypath[:-1]:
-            if k not in c:
-                c[k] = {}
-            c = c[k]
-        c[keypath[-1]] = value
-
-def diff_to_yaml(diff):
+def changes_to_yaml(changes):
     """ Return a multi-line string of pseudo-yaml from a nested dict produced by `diff()`.
     
         Output is like a yaml version of the original dicts, except that deletions are prefixed with '<'
@@ -347,16 +297,17 @@ def diff_to_yaml(diff):
     lines = []
     nindent = 4
     curr_keypath = []
-    for (keypath, action, value) in diff:
+    for (keypath, action, value) in changes:
+        # calculate position in keys wrt previous output:
         common = [a for a, b in zip(curr_keypath, keypath) if a == b]
         new = keypath[len(common):]
         level = len(keypath) - 2
-        # output intermediate keys (no action on these)
+        # output intermediate keys (no action on these):
         for i, k in enumerate(new[:-1]):
             lines.append('%s%s:' % ((' ' * nindent * level), k))
-        # output actual change
+        # output actual change:
         symbol = '<' if action == 'DEL' else '>'
-        lines.append(symbol + (' ' * (nindent * (level+1) - 1)) + keypath[-1] + ': ' + str(value))
+        lines.append(symbol + (' ' * (nindent * (level+1) - 1)) + keypath[-1] + ': ' + str(value)) # TODO: FIXME: empty fileset should be ''
         
         curr_keypath = keypath
     return '\n'.join(lines)
@@ -368,12 +319,6 @@ def main():
 
     if len(sys.argv) < 2:
         exit_bad_cli()
-    elif sys.argv[1] == 'debug':
-        nodemap_a = load_from_file(sys.argv[-2])
-        nodemap_b = load_from_file(sys.argv[-1])
-        diffs = diff(nodemap_a, nodemap_b)
-        diff_to_yaml(diffs)
-        
     elif sys.argv[1] == 'export' and len(sys.argv) == 2:
         live_nodemap = load_live()
         live_yaml = dump(live_nodemap, Dumper=Dumper, default_flow_style=False)
@@ -381,18 +326,16 @@ def main():
     elif sys.argv[1] == 'diff' and len(sys.argv) in (3, 4):
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
-        differences = diff(nodemap_a, nodemap_b)
-        #pprint.pprint(differences)
-        print(diff_to_yaml(differences))
+        changes = diff(nodemap_a, nodemap_b)
+        print(changes_to_yaml(changes))
     elif sys.argv[1] == 'import' and len(sys.argv) in (3, 4): # NB 4-arg form only for testing!!
         nodemap_a = load_live() if len(sys.argv) == 3 else load_from_file(sys.argv[2])
         nodemap_b = load_from_file(sys.argv[-1])
-        differences = diff(nodemap_a, nodemap_b)
-        # TODO: replace with diff_to_yaml
-        #pprint.pprint(differences)
-        print(diff_to_yaml(differences))
+        changes = diff(nodemap_a, nodemap_b)
+        #pprint.pprint(changes)
+        print(changes_to_yaml(changes))
         print('----')
-        change(differences)
+        make_changes(changes)
     
     elif sys.argv[1] == '--version' and len(sys.argv) == 2:
         print(__version__)
