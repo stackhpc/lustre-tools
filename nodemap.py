@@ -225,11 +225,9 @@ def diff(left, right):
     
     output = []
     for k in sorted(leftkeys | rightkeys):
-        print('key:', k)
-        #if k[-1] in NODEMAP_IGNORE_PARAMS:
-        #    print('ignoring', k)
-        #    pass # TODO: add verbose output and control?
-        if k in leftkeys and k not in rightkeys:
+        if k[-1] in NODEMAP_IGNORE_PARAMS:
+            pass # TODO: add verbose output and control?
+        elif k in leftkeys and k not in rightkeys:
             output.append((k, 'DEL', dleft[k]))
         elif k in rightkeys and k not in leftkeys:
             output.append((k, 'ADD', dright[k]))
@@ -295,8 +293,6 @@ def make_changes(changes, func=call):
                     func(NODEMAP_SET_FILESET.format(nodemap=nodemap, new=value))
                 elif param in NODEMAP_MODIFY_PARAMS and action == 'ADD': # can ignore delete
                     func(NODEMAP_MODIFY.format(nodemap=nodemap, property=param, new=value))
-                elif param in NODEMAP_IGNORE_PARAMS:
-                    pass # TODO: include verbose and ignore options?
                 elif param == 'idmap': # don't ignore delete as need to get rid of old ones
                     for idmap in value:
                         func(NODEMAP_CHANGE_IDMAP.format(mode=action.lower(), nodemap=nodemap, **idmap))
