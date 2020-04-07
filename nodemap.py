@@ -202,6 +202,15 @@ def flatten(data):
             results.append((tuple(keyparts), data))
     return results
 
+def strip_range_id(ranges):
+    """ Remove `id` field from ranges in nodemap range list
+    
+        Works in place, returns None.
+    """
+    for r in ranges:
+        if 'id' in r:
+            del r['id']
+
 def diff(left, right):
     """ Diff nested dicts.
 
@@ -225,6 +234,9 @@ def diff(left, right):
     
     output = []
     for k in sorted(leftkeys | rightkeys):
+        if k[-1] == 'ranges':
+            strip_range_id(dleft[k])
+            strip_range_id(dright[k])
         if k[-1] in NODEMAP_IGNORE_PARAMS:
             pass # TODO: add verbose output and control?
         elif k in leftkeys and k not in rightkeys:
