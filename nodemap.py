@@ -52,14 +52,6 @@ except ImportError:
 
 SAME, CHANGE, ADD, DELETE = range(4)
 
-def ips(start, end):
-    """ Given two IPv4 dot-decimal strings, return a sequence of all IP addresses in that range (inclusive of start and end) """
-    # Modified from https://stackoverflow.com/a/17641585/916373
-    start = struct.unpack('>I', socket.inet_aton(start))[0]
-    end = struct.unpack('>I', socket.inet_aton(end))[0]
-    return [socket.inet_ntoa(struct.pack('>I', i)) for i in range(start, end + 1)]
-    # TODO: would be nicer to change this into a compact form
-
 def cmd(cmdline):
     """ Run a space-separated command and return its stdout/stderr.
 
@@ -243,6 +235,32 @@ NODEMAP_CHANGE_RANGE = "lctl nodemap_{mode}_range --name {nodemap} --range {nid}
 NODEMAP_MODIFY_PARAMS = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
 NODEMAP_IGNORE_PARAMS = 'audit_mode exports id map_mode sepol'.split()
 
+def range_to_pattern(start_nid, end_nid):
+    """ Take nids as provided in range info from lustre and return the patten needed for add_range
+
+        e.g. 192.168.2.0@tp4, 192.168.3.255@tcp4 => 192.168.[2-3].[0-255]@tcp4
+
+        Note the start and end nids MUST produce a continous range considering each segment, e.g. this is not OK:
+            192.168.2.253@tp4, 192.168.3.9@tcp4 => 192.168.[2-3].[253-9]@tcp4
+        This is a lustre limitation, hence we don't try to handle this case here, as the range info returned from
+        lustre is guaranteed to be in this form.
+    """
+    start, _, netname1 = start_nid.partition('@')
+    end, _, netname2 = end_nid.partition('@')
+    if netname1 != netname2:
+        raise ValueError('invalid range from %s-%s: different netnames' % (start_nid, end_nid))
+    output = []
+    for s, e in zip(start.split('.'), end.split('.')):
+        s, e = int(s), int(e)
+        if s < e:
+            output.append('[%i-%i]' % (s, e))
+        elif s == e:
+            output.append(str(s))
+        else:
+            raise ValueError('invalid range from %s-%s: part has start > end' % (start_nid, end_nid))
+        # NB stil don't catch case described in docstring!
+    return '.'.join(output) + '@%s' % netname1
+
 def make_changes(changes, func=call):
     """ Make changes to the live nodemap config as output from diff().
     
@@ -281,10 +299,8 @@ def make_changes(changes, func=call):
                         func(NODEMAP_CHANGE_IDMAP.format(mode=action.lower(), nodemap=nodemap, **idmap))
                 elif param == 'ranges': # again need to delete old ones
                     for rng in value:
-                        start_addr, _, netname = rng['start_nid'].partition('@')
-                        end_addr, _, netname   = rng['end_nid'].partition('@') # net name must be the same
-                        for addr in ips(start_addr, end_addr):
-                            func(NODEMAP_CHANGE_RANGE.format(mode=action.lower(), nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
+                        pattern = range_to_pattern(rng['start_nid'], rng['end_nid'])
+                        func(NODEMAP_CHANGE_RANGE.format(mode=action.lower(), nodemap=nodemap, nid='{pattern}'.format(pattern=pattern)))
 
 def changes_to_yaml(changes):
     """ Return a multi-line string of pseudo-yaml from a nested dict produced by `diff()`.
