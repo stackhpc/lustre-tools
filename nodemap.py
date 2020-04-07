@@ -233,15 +233,14 @@ def diff(left, right):
     return output
     
 # changes for nodemap.*:
-NODEMAP_ACTIONS = {'nodemap_activate':"sudo lctl nodemap_activate {new}", # can just overwrite old value
-                   'nodemap_change':"sudo lctl nodemap_{mode} {name}",
-                   'set_fileset':"sudo lctl nodemap_set_fileset --name {nodemap} --fileset {new}",
-                   'nodemap_modify':"sudo lctl nodemap_modify --name {nodemap} --property {property} --value {new}",
-                   'change_idmap':"sudo lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}",
-                   'change_range':"sudo lctl nodemap_{mode}_range --name {nodemap} --range {nid}",   
-                  }
-NODEMAP_MODIFY = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
-NODEMAP_IGNORE = 'audit_mode exports id map_mode sepol'.split()
+NODEMAP_ACTIVATE = "sudo lctl nodemap_activate {new}" # can just overwrite old value
+NODEMAP_EXISTS = "sudo lctl nodemap_{mode} {name}"
+NODEMAP_SET_FILESET = "sudo lctl nodemap_set_fileset --name {nodemap} --fileset {new}"
+NODEMAP_MODIFY = "sudo lctl nodemap_modify --name {nodemap} --property {property} --value {new}"
+NODEMAP_CHANGE_IDMAP = "sudo lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}"
+NODEMAP_CHANGE_RANGE = "sudo lctl nodemap_{mode}_range --name {nodemap} --range {nid}"
+NODEMAP_MODIFY_PARAMS = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
+NODEMAP_IGNORE_PARAMS = 'audit_mode exports id map_mode sepol'.split()
 
 def make_changes(changes, func=call):
     """ Make changes to the live nodemap config as output from diff().
@@ -262,29 +261,29 @@ def make_changes(changes, func=call):
         if len(keypath) == 2:
             if nodemap == 'active': # not really a nodemap
                 if action == 'ADD': # don't care about what it was
-                    func(NODEMAP_ACTIONS['nodemap_activate'].format(new=value))
+                    func(NODEMAP_ACTIVATE.format(new=value))
             else: # nodemap add/delete
-                func(NODEMAP_ACTIONS['nodemap_change'].format(name=nodemap, mode=action.lower()))
+                func(NODEMAP_EXISTS.format(name=nodemap, mode=action.lower()))
                 if action == 'DEL':
                     deleted_nodemaps.append(nodemap)
         else:
             if nodemap not in deleted_nodemaps: # can't changed properties if we've deleted it!
                 param = keypath[2]
                 if param == 'fileset' and action == 'ADD': # can ignore delete
-                    func(NODEMAP_ACTIONS['set_fileset'].format(nodemap=nodemap, new=value))
-                elif param in NODEMAP_MODIFY and action == 'ADD': # can ignore delete
-                    func(NODEMAP_ACTIONS['nodemap_modify'].format(nodemap=nodemap, property=param, new=value))
-                elif param in NODEMAP_IGNORE:
+                    func(NODEMAP_SET_FILESET.format(nodemap=nodemap, new=value))
+                elif param in NODEMAP_MODIFY_PARAMS and action == 'ADD': # can ignore delete
+                    func(NODEMAP_MODIFY.format(nodemap=nodemap, property=param, new=value))
+                elif param in NODEMAP_IGNORE_PARAMS:
                     pass # TODO: include verbose and ignore options?
                 elif param == 'idmap': # don't ignore delete as need to get rid of old ones
                     for idmap in value:
-                        func(NODEMAP_ACTIONS['change_idmap'].format(mode=action.lower(), nodemap=nodemap, **idmap))
+                        func(NODEMAP_CHANGE_IDMAP.format(mode=action.lower(), nodemap=nodemap, **idmap))
                 elif param == 'ranges': # again need to delete old ones
                     for rng in value:
                         start_addr, _, netname = rng['start_nid'].partition('@')
                         end_addr, _, netname   = rng['end_nid'].partition('@') # net name must be the same
                         for addr in ips(start_addr, end_addr):
-                            func(NODEMAP_ACTIONS['change_range'].format(mode=action.lower(), nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
+                            func(NODEMAP_CHANGE_RANGE.format(mode=action.lower(), nodemap=nodemap, nid='{addr}@{netname}'.format(addr=addr, netname=netname)))
 
 def changes_to_yaml(changes):
     """ Return a multi-line string of pseudo-yaml from a nested dict produced by `diff()`.
