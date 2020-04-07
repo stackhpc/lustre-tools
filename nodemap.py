@@ -8,6 +8,8 @@
         nodemap.py --help
         nodemap.py --version
 
+    NB: You may need to use sudo.
+
     The first form outputs the live lustre nodemap configuration to stdout.
     The second form outputs the changes needed to alter the live nodemap configuration to that defined in the file, or else from config A to config B.
     The third form imports the given configuration, and outputs the changes made to the live configuration.
@@ -27,7 +29,6 @@
     TODO: YAML diff output for [] e.g. ranges, could be better.
     TODO: provide stdin for import?
     TODO: check ranges work propery
-    TODO: fix sudo behaviour
     TODO: note restrictions on NID ranges for import?
 
 """
@@ -85,7 +86,7 @@ def lctl_get_param(item, output):
         Dict keys are always strs. The structure of this (i.e. the nested keys) follows the path-line structure of lctl
         parameters. The same dict may be passed to this function multiple times to build up results from several parameters.
     """
-    s, e = cmd("sudo lctl get_param '{item}'".format(item=item)) # need quoting around `item` to avoid shell expansion of ".*" !
+    s, e = cmd("lctl get_param '{item}'".format(item=item)) # need quoting around `item` to avoid shell expansion of ".*" !
     lines = s.strip().split('\n')
     accumulate = []
     for line in lines:
@@ -233,12 +234,12 @@ def diff(left, right):
     return output
     
 # changes for nodemap.*:
-NODEMAP_ACTIVATE = "sudo lctl nodemap_activate {new}" # can just overwrite old value
-NODEMAP_EXISTS = "sudo lctl nodemap_{mode} {name}"
-NODEMAP_SET_FILESET = "sudo lctl nodemap_set_fileset --name {nodemap} --fileset {new}"
-NODEMAP_MODIFY = "sudo lctl nodemap_modify --name {nodemap} --property {property} --value {new}"
-NODEMAP_CHANGE_IDMAP = "sudo lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}"
-NODEMAP_CHANGE_RANGE = "sudo lctl nodemap_{mode}_range --name {nodemap} --range {nid}"
+NODEMAP_ACTIVATE = "lctl nodemap_activate {new}" # can just overwrite old value
+NODEMAP_EXISTS = "lctl nodemap_{mode} {name}"
+NODEMAP_SET_FILESET = "lctl nodemap_set_fileset --name {nodemap} --fileset {new}"
+NODEMAP_MODIFY = "lctl nodemap_modify --name {nodemap} --property {property} --value {new}"
+NODEMAP_CHANGE_IDMAP = "lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}"
+NODEMAP_CHANGE_RANGE = "lctl nodemap_{mode}_range --name {nodemap} --range {nid}"
 NODEMAP_MODIFY_PARAMS = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
 NODEMAP_IGNORE_PARAMS = 'audit_mode exports id map_mode sepol'.split()
 
