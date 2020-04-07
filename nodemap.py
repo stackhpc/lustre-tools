@@ -28,7 +28,6 @@
 
     TODO: YAML diff output for [] e.g. ranges, could be better.
     TODO: provide stdin for import?
-    TODO: check ranges work propery
     TODO: note restrictions on NID ranges for import?
 
 """
@@ -50,7 +49,15 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 
-SAME, CHANGE, ADD, DELETE = range(4)
+# lctl commands:
+NODEMAP_ACTIVATE = "lctl nodemap_activate {new}" # can just overwrite old value
+NODEMAP_EXISTS = "lctl nodemap_{mode} {name}"
+NODEMAP_SET_FILESET = "lctl nodemap_set_fileset --name {nodemap} --fileset {new}"
+NODEMAP_MODIFY = "lctl nodemap_modify --name {nodemap} --property {property} --value {new}"
+NODEMAP_CHANGE_IDMAP = "lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}"
+NODEMAP_CHANGE_RANGE = "lctl nodemap_{mode}_range --name {nodemap} --range {nid}"
+NODEMAP_MODIFY_PARAMS = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
+NODEMAP_IGNORE_PARAMS = 'audit_mode exports id map_mode sepol'.split()
 
 def cmd(cmdline):
     """ Run a space-separated command and return its stdout/stderr.
@@ -187,7 +194,8 @@ def flatten(data):
     while stack:
         keyparts, data = stack.pop(0)
         if isinstance(data, dict):
-            results.append((tuple(keyparts), {}))
+            if keyparts != []:
+                results.append((tuple(keyparts), {}))
             for k in sorted(data.keys()):
                 stack.append((keyparts + [k], data[k]))
         else:
@@ -214,8 +222,13 @@ def diff(left, right):
 
     leftkeys = set(dleft.keys())
     rightkeys = set(dright.keys())
+    
     output = []
     for k in sorted(leftkeys | rightkeys):
+        print('key:', k)
+        #if k[-1] in NODEMAP_IGNORE_PARAMS:
+        #    print('ignoring', k)
+        #    pass # TODO: add verbose output and control?
         if k in leftkeys and k not in rightkeys:
             output.append((k, 'DEL', dleft[k]))
         elif k in rightkeys and k not in leftkeys:
@@ -225,16 +238,6 @@ def diff(left, right):
             output.append((k, 'ADD', dright[k]))
     return output
     
-# changes for nodemap.*:
-NODEMAP_ACTIVATE = "lctl nodemap_activate {new}" # can just overwrite old value
-NODEMAP_EXISTS = "lctl nodemap_{mode} {name}"
-NODEMAP_SET_FILESET = "lctl nodemap_set_fileset --name {nodemap} --fileset {new}"
-NODEMAP_MODIFY = "lctl nodemap_modify --name {nodemap} --property {property} --value {new}"
-NODEMAP_CHANGE_IDMAP = "lctl nodemap_{mode}_idmap --name {nodemap} --idtype {idtype} --idmap {client_id}:{fs_id}"
-NODEMAP_CHANGE_RANGE = "lctl nodemap_{mode}_range --name {nodemap} --range {nid}"
-NODEMAP_MODIFY_PARAMS = 'admin_nodemap squash_gid squash_uid trusted_nodemap deny_unknown'.split()
-NODEMAP_IGNORE_PARAMS = 'audit_mode exports id map_mode sepol'.split()
-
 def range_to_pattern(start_nid, end_nid):
     """ Take nids as provided in range info from lustre and return the patten needed for add_range
 
