@@ -228,14 +228,17 @@ def diff(left, right):
     dleft = dict((k, v) for (k, v) in flatten(left))
     dright = dict((k, v) for (k, v) in flatten(right))
 
+    # remove 'id' key from range: # TODO: find some way to generalise this as key=func, with key maybe wildcarded, e.g. (*, "ranges")
+    for d in (dleft, dright):
+        for k in d:
+            if k[-1] == 'ranges':
+                strip_range_id(d[k])
+
     leftkeys = set(dleft.keys())
     rightkeys = set(dright.keys())
     
     output = []
     for k in sorted(leftkeys | rightkeys):
-        if k[-1] == 'ranges':
-            strip_range_id(dleft[k])
-            strip_range_id(dright[k])
         if k[-1] in NODEMAP_IGNORE_PARAMS:
             pass # TODO: add verbose output and control?
         elif k in leftkeys and k not in rightkeys:
